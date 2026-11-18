@@ -1,26 +1,196 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* House Money brand — "Paper & Ember" (60 / 30 / 10). See docs/brand.md */
+@theme {
+  --color-paper: #f5f3ee;   /* 60 % base: warm paper */
+  --color-card: #fffffc;
+  --color-ink: #16233f;     /* 30 % structure: deep navy (complement of the accent) */
+  --color-stone: #e3e6eb;
+  --color-muted: #5d677a;
+  --color-ember: #c4442e;   /* 10 % accent: medium reddish */
+  --color-ember-dark: #9c3523;
+  --color-ember-text: #b03b27; /* accent for small text (≥ 4.5:1 on paper) */
+  --color-ember-soft: #f6e3de;
+  --color-sun: #ffd65c;     /* texture only: the glow inside the "sun" orb */
+  --color-gain: #2e7d50;    /* functional: gains only */
+  --font-sans: var(--font-nunito);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-nunito), ui-rounded, system-ui, sans-serif;
+}
+
+/* Cards: white, soft shadow, no heavy borders */
+.card {
+  background: var(--color-card);
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(31, 29, 36, 0.04), 0 8px 24px -12px rgba(31, 29, 36, 0.12);
+}
+
+/* Subtle glass, only for the bottom bar */
+.glass {
+  background: rgba(255, 254, 251, 0.72);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgba(31, 29, 36, 0.06);
+  box-shadow: 0 8px 30px -12px rgba(31, 29, 36, 0.18);
+}
+
+/* Duolingo-style tactile buttons, toned down */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 16px;
+  font-weight: 800;
+  transition: transform 80ms ease, box-shadow 80ms ease, opacity 120ms ease;
+  user-select: none;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(3px);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-ember);
+  color: #fff;
+  box-shadow: 0 3px 0 var(--color-ember-dark);
+}
+.btn-primary:active:not(:disabled) {
+  box-shadow: 0 0 0 var(--color-ember-dark);
+}
+.btn-ink {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  box-shadow: 0 3px 0 #0b1428;
+}
+.btn-quiet {
+  background: var(--color-card);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 1px var(--color-stone), 0 3px 0 var(--color-stone);
+}
+
+/* Selectable tiles */
+.tile {
+  background: var(--color-card);
+  box-shadow: 0 0 0 1.5px var(--color-stone), 0 3px 0 var(--color-stone);
+  transition: transform 80ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease;
+}
+.tile:active {
+  transform: translateY(2px);
+}
+.tile[aria-pressed="true"] {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  box-shadow: 0 3px 0 #0b1428;
+}
+
+/* Thin rounded progress */
+.bar {
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-stone);
+  overflow: hidden;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--color-ember);
+  transition: width 300ms ease;
+}
+
+/* "Sun" texture: blurred orange-red orb with a yellow core (inspired by the layered-blur reference).
+   Used only on the navy Vault card and the onboarding hero. */
+.sun {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.sun::before,
+.sun::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+.sun::before {
+  width: 260px;
+  height: 220px;
+  right: -70px;
+  bottom: -120px;
+  background: #e2441c;
+  filter: blur(60px);
+  opacity: 0.85;
+}
+.sun::after {
+  width: 150px;
+  height: 110px;
+  right: -10px;
+  bottom: -70px;
+  background: var(--color-sun);
+  filter: blur(40px);
+  opacity: 0.9;
+}
+.sun-hero::before {
+  width: 340px;
+  height: 200px;
+  left: 50%;
+  bottom: -130px;
+  right: auto;
+  transform: translateX(-50%);
+  opacity: 0.9;
+}
+.sun-hero::after {
+  width: 200px;
+  height: 90px;
+  left: 50%;
+  bottom: -60px;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.enter {
+  animation: enter 220ms ease-out both;
+}
+@keyframes confetti-fall {
+  from {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(480px) rotate(400deg);
+    opacity: 0;
+  }
+}
+.confetti {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  animation: confetti-fall 1.6s ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter,
+  .confetti {
+    animation: none;
+  }
 }
