@@ -401,12 +401,17 @@ pub fn settle_payout(stake: u64, boost: u8, direction: u8, entry: i64, exit: i64
     require!(entry > 0 && exit > 0, HmError::StalePrice);
     let sign: i128 = if direction == 0 { 1 } else { -1 };
     // result = stake * boost * (exit - entry) / entry, in token units
-    let result = (stake as i128) * (boost as i128) * (exit as i128 - entry as i128) * sign / (entry as i128);
+    let result = (stake as i128)
+        .checked_mul(boost as i128)
+        .and_then(|x| x.checked_mul((exit as i128 - entry as i128) * sign))
+        .ok_or(HmError::MathOverflow)?
+        / (entry as i128);
     if result <= -(stake as i128) {
         return Ok(0);
     }
-    let capped = result.min(stake as i128 * max_win_multiple as i128);
-    u64::try_from(stake as i128 + capped).map_err(|_| HmError::MathOverflow.into())
+    let cap = (stake as i128).checked_mul(max_win_multiple as i128).ok_or(HmError::MathOverflow)?;
+    let payout = (stake as i128).checked_add(result.min(cap)).ok_or(HmError::MathOverflow)?;
+    u64::try_from(payout).map_err(|_| HmError::MathOverflow.into())
 }
 
 pub struct PythPrice {
@@ -429,10 +434,10 @@ pub fn parse_price_update(data: &[u8], now: i64, max_age: i64) -> Result<PythPri
     o += if data[o] == 1 { 1 } else { 2 };
     o += 32; // feed_id
     require!(data.len() >= o + 28, HmError::WrongPriceFeed);
-    let rd8 = |at: usize| -> [u8; 8] { data[at..at + 8].try_into().unwrap() };
-    let price = i64::from_le_bytes(rd8(o));
-    let expo = i32::from_le_bytes(data[o + 16..o + 20].try_into().unwrap());
-    let publish_time = i64::from_le_bytes(rd8(o + 20));
+    let bad = |_: std::array::TryFromSliceError| error!(HmError::WrongPriceFeed);
+    let price = i64::from_le_bytes(data[o..o + 8].try_into().map_err(bad)?);
+    let expo = i32::from_le_bytes(data[o + 16..o + 20].try_into().map_err(bad)?);
+    let publish_time = i64::from_le_bytes(data[o + 20..o + 28].try_into().map_err(bad)?);
     require!(price > 0, HmError::StalePrice);
     require!(now - publish_time <= max_age, HmError::StalePrice);
     Ok(PythPrice { price, expo })
