@@ -28,6 +28,8 @@ const PAYER_IXS = new Set([
   "58,230,6,58,104,245,154,227",
 ]);
 const MAX_TOPUP_USD = 500;
+const MAX_CU = 400_000;
+const MAX_CU_PRICE = 1_000_000n; // µlamports per compute unit
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -84,7 +86,8 @@ const worker = {
       const err = e as { message?: string; logs?: string[] };
       const logs = err.logs ?? [];
       const msg = logs.find((l) => l.includes("Error Message:"))?.split("Error Message: ")[1] ?? err.message ?? "Error";
-      return json({ error: msg, logs }, 500);
+      // The Worker makes no network calls, so any failure here comes from a malformed request.
+      return json({ error: msg, logs }, 400);
     }
   },
 };
@@ -98,7 +101,14 @@ function vet(tx: Transaction, sponsor: PublicKey): string | null {
   if (!tx.feePayer?.equals(sponsor)) return "Fee payer must be the sponsor.";
   if (tx.instructions.length === 0 || tx.instructions.length > 5) return "Unexpected transaction.";
   for (const ix of tx.instructions) {
-    if (ix.programId.equals(COMPUTE_BUDGET)) continue;
+    if (ix.programId.equals(COMPUTE_BUDGET)) {
+      // Cap what a sponsored transaction can cost: ≤ 400k CU at ≤ 1,000,000 µlamports/CU (~0.0004 SOL).
+      const kind = ix.data[0];
+      const view = new DataView(ix.data.buffer, ix.data.byteOffset, ix.data.byteLength);
+      if (kind === 2 && ix.data.length === 5 && view.getUint32(1, true) <= MAX_CU) continue;
+      if (kind === 3 && ix.data.length === 9 && view.getBigUint64(1, true) <= MAX_CU_PRICE) continue;
+      return "Priority fee above the sponsor's cap.";
+    }
     if (!ix.programId.equals(PROGRAM_ID)) return "Only House Money instructions can be sponsored.";
     const disc = Array.from(ix.data.subarray(0, 8)).join(",");
     for (const [i, k] of ix.keys.entries()) {

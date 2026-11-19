@@ -81,10 +81,10 @@ ok("Ana, Leo and Mallory topped up $100 each (simulated Apple Pay), zero SOL in 
 // 5. Ana creates a crew, Leo joins
 const crewId = BigInt(Date.now());
 const crewAddr = hm.crewPda(ana.publicKey, crewId);
-await send([hm.createCrewIx(sponsor.publicKey, ana.publicKey, mint, crewId, "Austin Crew", "🤠")], [ana]);
+await send([hm.createCrewIx(sponsor.publicKey, ana.publicKey, mint, crewId, "[test] Austin Crew", "🤠")], [ana]);
 await send([hm.joinCrewIx(sponsor.publicKey, leo.publicKey, crewAddr)], [leo]);
 let c = await crew(crewAddr);
-assert(c.name === "Austin Crew" && c.members === 2, "crew created with 2 members");
+assert(c.name === "[test] Austin Crew" && c.members === 2, "crew created with 2 members");
 ok(`crew "${c.name}" ${c.emoji} created, ${c.members} members`);
 
 // 6. Deposits

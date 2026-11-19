@@ -34,6 +34,7 @@ const HIDDEN_CREWS = new Set([
   "4Q75qQMSECw5gZFKLVrQBDhT2gEBhfuxNMZ5uxfXQRH4",
   "CSWd2WW5HsqMDemMKvisVisUJ9Ad6Q3A3gdghLwRkegL",
   "GZVEhfyhC7b6T9vqucn9XiAekmsXWzfegvVqxVySWzaq",
+  "AgxFcepgNhbDUDtwdzgATXzZgcTbrEpWJm5y5HeXbNn2", // e2e run before test crews were prefixed
 ]);
 
 export function loadAccount(): Keypair {
@@ -93,7 +94,8 @@ export class LiveClient {
 
     const crews = crewAccs
       .filter((a) => !HIDDEN_CREWS.has(a.pubkey.toBase58()))
-      .map((a) => hm.decodeCrew(a.pubkey, a.account.data));
+      .map((a) => hm.decodeCrew(a.pubkey, a.account.data))
+      .filter((c) => !c.name.startsWith("[test]")); // crews created by scripts/e2e.mts
     const vaults = await this.conn.getMultipleAccountsInfo(crews.map((c) => hm.crewVaultPda(c.address)));
     const members = new Map(memberAccs.map((a) => {
       const m = hm.decodeMember(a.pubkey, a.account.data);

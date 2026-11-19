@@ -39,6 +39,8 @@ Apple Pay (simulated) ─► your cash (hmUSD) ─► crew pot (program vault, s
 
 - `cargo test`: settlement, interest, share math and Pyth parsing (4 unit tests).
 - Solana MCP `program_autofixer` (security lint): 0 issues.
+- `scripts/worker-security.mts`: 14 attacks on the live edge API (drain SOL or dollars from the sponsor, sponsor as owner, foreign instructions, oversized priority fees, bad top-ups). All rejected; legit requests signed.
+- `scripts/yield-check.mts`: proves accrual on devnet (pot grows by exactly what the reserve pays).
 - `scripts/e2e.mts`: 15 on-chain checks, all passing on a local validator and on devnet. Among them: staking savings is rejected (`PrincipalIsProtected`), strangers can't withdraw, no withdrawals while a call is open, no early settlement, principal intact after a call, a member leaves with at least what they put in.
 
 ## Run it
