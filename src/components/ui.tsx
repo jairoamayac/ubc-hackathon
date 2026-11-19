@@ -2,6 +2,7 @@
 
 import { Flame, Home, Trophy, User, Zap } from "lucide-react";
 import type { ReactNode } from "react";
+import { Logo } from "./Logo";
 
 export const usd = (n: number, opts: { sign?: boolean } = {}) => {
   const s = Math.abs(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -12,7 +13,9 @@ export const usd = (n: number, opts: { sign?: boolean } = {}) => {
 export function TopBar({ streak }: { streak: number }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-lg font-extrabold tracking-tight">house money</span>
+      <span className="flex items-center gap-2 text-lg font-extrabold tracking-tight">
+        <Logo size={28} /> house money
+      </span>
       <span className="flex items-center gap-1 text-sm font-extrabold text-ember-text" aria-label={`${streak} call streak`}>
         <Flame className="h-4 w-4 fill-ember" /> {streak}
       </span>

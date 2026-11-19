@@ -38,6 +38,15 @@ export interface HomeState {
   weekProgress: number; // 0..1 until Friday close
   openPlay: Play | null;
   lastSettled: Play | null;
+  roundUps: RoundUp[]; // this week's spare change, already in the Vault
+  stack: { btc: number; usdIn: number }; // BTC bought with house money (Stack)
+}
+
+/** A card purchase rounded up to the next dollar; the difference goes to the Vault. */
+export interface RoundUp {
+  merchant: string;
+  amount: number;
+  spare: number;
 }
 
 export interface LeagueRow {

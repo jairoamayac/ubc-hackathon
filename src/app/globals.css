@@ -13,7 +13,7 @@
   --color-ember-soft: #f6e3de;
   --color-sun: #ffd65c;     /* texture only: the glow inside the "sun" orb */
   --color-gain: #2e7d50;    /* functional: gains only */
-  --font-sans: var(--font-nunito);
+  --font-sans: var(--font-manrope);
 }
 
 html,
@@ -23,7 +23,7 @@ body {
 }
 
 body {
-  font-family: var(--font-nunito), ui-rounded, system-ui, sans-serif;
+  font-family: var(--font-manrope), system-ui, sans-serif;
 }
 
 /* Cards: white, soft shadow, no heavy borders */

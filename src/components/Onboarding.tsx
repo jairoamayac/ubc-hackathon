@@ -1,29 +1,29 @@
 "use client";
 
-import { ArrowRight, Lock, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Flame, Lock, Users } from "lucide-react";
 import { useState } from "react";
 
 const slides = [
   {
-    icon: <Lock className="h-8 w-8" strokeWidth={2.2} />,
-    title: "Save like a grown‑up.",
-    body: "Your money sits in your Vault and earns interest every week. It only leaves when you take it out.",
-  },
-  {
-    icon: <Sparkles className="h-8 w-8" strokeWidth={2.2} />,
-    title: "Play with house money.",
-    body: "Only the interest your savings pay you can be played. Is SOL going up or down this week?",
-  },
-  {
     icon: <Users className="h-8 w-8" strokeWidth={2.2} />,
-    title: "Keep the streak with friends.",
-    body: "Weekly leagues and streaks. Worst case, you lose that week's interest. Never your savings.",
+    title: "Save with your crew.",
+    body: "Add money with Apple Pay and send it to a crew: your roommates, your team, your group chat. Together it grows every day.",
+  },
+  {
+    icon: <Flame className="h-8 w-8" strokeWidth={2.2} />,
+    title: "See who's growing.",
+    body: "Every crew is ranked live. Watch the trending ones, join them, or beat them.",
+  },
+  {
+    icon: <Lock className="h-8 w-8" strokeWidth={2.2} />,
+    title: "Your savings never move.",
+    body: "Feeling tryhard? Play only what your crew earned on a weekly call. Worst case, you lose those earnings. Never your savings.",
   },
 ];
 
-export function Onboarding({ onDone }: { onDone: (email: string) => void }) {
+export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
   const [i, setI] = useState(0);
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const last = i === slides.length;
 
   return (
@@ -50,21 +50,21 @@ export function Onboarding({ onDone }: { onDone: (email: string) => void }) {
           className="enter flex flex-1 flex-col justify-center gap-5"
           onSubmit={(e) => {
             e.preventDefault();
-            onDone(email || "ana@college.edu");
+            onDone(name.trim() || "Ana");
           }}
         >
-          <h1 className="text-[40px] font-extrabold leading-[1.05] tracking-tight">Open your Vault.</h1>
-          <p className="text-lg font-semibold text-muted">Just your email. No passwords, no wallets, no jargon.</p>
+          <h1 className="text-[40px] font-extrabold leading-[1.05] tracking-tight">What should your crew call you?</h1>
+          <p className="text-lg font-semibold text-muted">No passwords, no wallets, no jargon. Your account is ready in a second.</p>
           <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@college.edu"
+            value={name}
+            maxLength={20}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your first name"
             className="card w-full px-4 py-4 text-lg font-bold outline-none ring-ember placeholder:text-muted/60 focus:ring-2"
-            aria-label="Email"
+            aria-label="First name"
           />
           <button type="submit" className="btn btn-primary w-full py-4 text-lg">
-            Continue with email <ArrowRight className="h-5 w-5" />
+            Open my account <ArrowRight className="h-5 w-5" />
           </button>
         </form>
       )}

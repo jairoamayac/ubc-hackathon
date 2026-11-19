@@ -1,11 +1,20 @@
 {
-  // House Money demo: Next.js static export served by a Cloudflare Worker (static assets only, no server code yet).
+  // House Money: Next.js static export + a small edge API (worker/index.ts) on one Cloudflare Worker.
   // Build first: `npm run build` (writes ./out), then `npx wrangler deploy`.
+  // Secret: `npx wrangler secret put SPONSOR_KEY` (JSON array of the devnet sponsor keypair).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "house-money-ubc",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-17",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./out",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "RPC_URL": "https://api.devnet.solana.com",
+    "MINT": "SET_AFTER_DEVNET_SETUP"
   }
 }

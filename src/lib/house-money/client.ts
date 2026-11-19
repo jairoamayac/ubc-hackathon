@@ -2,7 +2,7 @@
 // Today it is backed by an in-memory mock; later a SolanaHouseMoneyClient will call the
 // Anchor program (via Privy + the /api/relay fee payer) without touching any screen.
 
-import { RULES, type Direction, type HomeState, type LeagueRow, type Market, type Play } from "./types";
+import { RULES, type Direction, type HomeState, type LeagueRow, type Market, type Play, type RoundUp } from "./types";
 
 export interface HouseMoneyClient {
   getHome(): HomeState;
@@ -14,6 +14,14 @@ export interface HouseMoneyClient {
   /** DEMO only: jumps to Friday's close with a simulated price move (e.g. +0.04 = +4 %). */
   demoSettle(move: number): Play;
   claimNewWeek(): HomeState;
+  /** Stack: auto-buy BTC with house money (never with the Vault). */
+  stack(amount: number): HomeState;
+}
+
+/** Round-up rule: $10.20 → $11, $0.80 to the Vault. Whole-dollar purchases round up a full $1. */
+export function spareChange(amount: number) {
+  const up = Math.floor(amount) + 1;
+  return Math.round((up - amount) * 100) / 100;
 }
 
 /** Same settlement rule the on-chain program enforces (see invariants 2, 5 and 6). */
@@ -62,7 +70,16 @@ export function createMockClient(): HouseMoneyClient {
     weekProgress: 0.6,
     openPlay: null,
     lastSettled: null,
+    roundUps: [],
+    stack: { btc: 0, usdIn: 0 },
   };
+  const BTC_USD = 64923.66; // last BTC/USD read from Pyth on devnet (17/11/2026)
+  const purchases: Omit<RoundUp, "spare">[] = [
+    { merchant: "Coffee", amount: 10.2 },
+    { merchant: "Uber", amount: 14.35 },
+    { merchant: "Chipotle", amount: 12.6 },
+    { merchant: "Spotify", amount: 11.99 },
+  ];
 
   const league: LeagueRow[] = [
     { name: "Leo", avatar: "LE", returnPct: 38.5, streak: 4 },
@@ -89,7 +106,11 @@ export function createMockClient(): HouseMoneyClient {
       const first = state.vault.principal === 0;
       state.vault.principal = round(state.vault.principal + amount);
       state.weeklyInterest = round((state.vault.principal * state.vault.apy) / 52);
-      if (first) state.houseMoney = round(state.houseMoney + RULES.welcomeBonus + state.weeklyInterest);
+      if (first) {
+        state.houseMoney = round(state.houseMoney + RULES.welcomeBonus + state.weeklyInterest);
+        state.roundUps = purchases.map((p) => ({ ...p, spare: spareChange(p.amount) }));
+        state.vault.principal = round(state.vault.principal + state.roundUps.reduce((s, r) => s + r.spare, 0));
+      }
       return snapshot();
     },
 
@@ -131,6 +152,13 @@ export function createMockClient(): HouseMoneyClient {
         me.streak = state.streak;
       }
       return settled;
+    },
+
+    stack(amount) {
+      if (amount <= 0 || amount > state.houseMoney) throw new Error("You can only stack your house money.");
+      state.houseMoney = round(state.houseMoney - amount);
+      state.stack = { btc: state.stack.btc + amount / BTC_USD, usdIn: round(state.stack.usdIn + amount) };
+      return snapshot();
     },
 
     claimNewWeek() {

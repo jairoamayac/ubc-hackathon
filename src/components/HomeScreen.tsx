@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronRight, Coins, Lock } from "lucide-react";
 import type { HomeState, LeagueRow } from "@/lib/house-money/types";
 import { Screen, TopBar, usd } from "./ui";
 
@@ -34,6 +34,20 @@ export function HomeScreen({
           ~{(home.vault.apy * 100).toFixed(0)}% a year · {usd(home.weeklyInterest)} this week
         </p>
       </section>
+
+      {home.roundUps.length > 0 && (
+        <section className="card p-5">
+          <p className="flex items-center gap-2 text-sm font-bold text-muted"><Coins className="h-4 w-4" /> Spare change this week</p>
+          <ul className="mt-3 space-y-1.5 text-sm font-semibold">
+            {home.roundUps.slice(0, 3).map((r) => (
+              <li key={r.merchant} className="flex justify-between">
+                <span>{r.merchant} {usd(r.amount)}</span>
+                <span className="text-ember-text">+{usd(r.spare)} to Vault</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* House money */}
       <section className="card p-5">
