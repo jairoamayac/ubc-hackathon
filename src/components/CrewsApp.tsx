@@ -314,7 +314,7 @@ function Row({ k, v }: { k: string; v: string }) {
 }
 
 function CrewRow({ crew, snap, now, rank, onOpen, mine }: { crew: CrewView; snap: Snapshot; now: number; rank: number; onOpen: () => void; mine?: boolean }) {
-  const earnedToday = crew.yieldPerDay;
+  const perMinute = crew.yieldPerDay / 1440;
   return (
     <button onClick={onOpen} className="card flex items-center gap-3 p-4 text-left">
       <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-stone text-2xl">{crew.emoji}</span>
@@ -324,7 +324,7 @@ function CrewRow({ crew, snap, now, rank, onOpen, mine }: { crew: CrewView; snap
           {rank === 1 && <Flame className="h-4 w-4 shrink-0 fill-ember text-ember" />}
         </span>
         <span className="block text-xs font-bold text-muted">
-          #{rank} · {plural(crew.members)} · +{usd(earnedToday)}/day
+          #{rank} · {plural(crew.members)} · +${perMinute.toFixed(3)}/min
         </span>
       </span>
       <span className="text-right">
@@ -358,7 +358,7 @@ function CrewScreen(props: {
         {me ? (
           <p className="mt-2 text-sm font-extrabold text-sun">+${earned.toFixed(6)} earned on {usd(me.principal)} saved</p>
         ) : (
-          <p className="mt-2 text-sm font-extrabold text-sun">This crew earns {usd(crew.yieldPerDay)} a day. You&apos;re not in it yet.</p>
+          <p className="mt-2 text-sm font-extrabold text-sun">This crew earns ${(crew.yieldPerDay / 1440).toFixed(3)} every minute. You&apos;re not in it yet.</p>
         )}
       </section>
 

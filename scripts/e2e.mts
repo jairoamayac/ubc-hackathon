@@ -24,7 +24,7 @@ const usd = (u: bigint) => `$${hm.toUsd(u).toFixed(6)}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function send(ixs: TransactionInstruction[], signers: Keypair[]) {
-  const tx = new Transaction().add(...ixs);
+  const tx = new Transaction().add(...hm.priorityIxs(), ...ixs);
   tx.feePayer = sponsor.publicKey; // people never hold SOL: the app sponsors every fee
   return sendAndConfirmTransaction(conn, tx, [sponsor, ...signers.filter((s) => !s.publicKey.equals(sponsor.publicKey))]);
 }

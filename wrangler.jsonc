@@ -15,6 +15,6 @@
   },
   "vars": {
     "RPC_URL": "https://api.devnet.solana.com",
-    "MINT": "SET_AFTER_DEVNET_SETUP"
+    "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn"
   }
 }

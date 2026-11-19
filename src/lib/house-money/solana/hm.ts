@@ -1,6 +1,6 @@
 // Thin, dependency-light client for the house_money Anchor program (no IDL needed).
 // Used by the app (browser) and by the devnet scripts (Node runs this .ts file directly).
-import { PublicKey, SystemProgram, TransactionInstruction, type AccountMeta, type Connection } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction, type AccountMeta, type Connection } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Buffer } from "buffer";
 
@@ -8,6 +8,11 @@ export const PROGRAM_ID = new PublicKey("9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDV
 /** Pyth SOL/USD PriceUpdateV2 account (sponsored feed, Solana devnet). */
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
+/** Priority fee so transactions land when devnet is busy (paid by the sponsor). */
+export const priorityIxs = () => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
+];
 
 const IX = {
   init_config: [23, 235, 115, 232, 168, 96, 1, 231],

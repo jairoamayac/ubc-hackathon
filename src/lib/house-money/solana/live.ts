@@ -4,6 +4,7 @@
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import bs58 from "bs58";
+import { Buffer } from "buffer";
 import * as hm from "./hm";
 
 export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string }
@@ -124,8 +125,9 @@ export class LiveClient {
 
   // ------------------------------------------------------------ actions
   async topUp(usd: number) {
-    const { signature } = await api<{ signature: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd });
-    return signature;
+    const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
+    const { tx } = await api<{ tx: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd, blockhash });
+    return this.submit(tx, lastValidBlockHeight);
   }
 
   createCrew(name: string, emoji: string) {
@@ -158,11 +160,24 @@ export class LiveClient {
 
   private async send(ixs: TransactionInstruction[]) {
     const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
-    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...ixs);
+    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
     if (needsOwner) tx.partialSign(this.owner);
     const b64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
-    const { signature } = await api<{ signature: string }>("/api/sponsor", { tx: b64 });
+    const { tx: signed } = await api<{ tx: string }>("/api/sponsor", { tx: b64 });
+    return this.submit(signed, lastValidBlockHeight);
+  }
+
+  /** Sends a fully signed transaction from the device and waits for confirmation. */
+  private async submit(b64: string, lastValidBlockHeight: number) {
+    let signature: string;
+    try {
+      signature = await this.conn.sendRawTransaction(Buffer.from(b64, "base64"), { preflightCommitment: "confirmed" });
+    } catch (e) {
+      const logs = (e as { logs?: string[] }).logs ?? [];
+      const msg = logs.find((l) => l.includes("Error Message:"))?.split("Error Message: ")[1];
+      throw new Error(friendly(msg ?? (e as Error).message));
+    }
     try {
       await hm.confirm(this.conn, signature, lastValidBlockHeight);
     } catch (e) {
