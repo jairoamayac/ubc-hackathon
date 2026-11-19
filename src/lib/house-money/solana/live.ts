@@ -28,6 +28,14 @@ export interface Snapshot {
 
 const KEY = "hm.account.v1";
 
+// Duplicate demo crews left on devnet by interrupted seed runs. Crews cannot be deleted on-chain,
+// so the app hides them (their funds stay in their vaults).
+const HIDDEN_CREWS = new Set([
+  "4Q75qQMSECw5gZFKLVrQBDhT2gEBhfuxNMZ5uxfXQRH4",
+  "CSWd2WW5HsqMDemMKvisVisUJ9Ad6Q3A3gdghLwRkegL",
+  "GZVEhfyhC7b6T9vqucn9XiAekmsXWzfegvVqxVySWzaq",
+]);
+
 export function loadAccount(): Keypair {
   const raw = localStorage.getItem(KEY);
   if (raw) return Keypair.fromSecretKey(bs58.decode(raw));
@@ -83,7 +91,9 @@ export class LiveClient {
     const config = hm.decodeConfig(infos[1]!.data);
     const pyth = hm.decodePythPrice(infos[2]!.data);
 
-    const crews = crewAccs.map((a) => hm.decodeCrew(a.pubkey, a.account.data));
+    const crews = crewAccs
+      .filter((a) => !HIDDEN_CREWS.has(a.pubkey.toBase58()))
+      .map((a) => hm.decodeCrew(a.pubkey, a.account.data));
     const vaults = await this.conn.getMultipleAccountsInfo(crews.map((c) => hm.crewVaultPda(c.address)));
     const members = new Map(memberAccs.map((a) => {
       const m = hm.decodeMember(a.pubkey, a.account.data);
