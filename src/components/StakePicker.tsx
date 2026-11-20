@@ -20,7 +20,7 @@ export function StakePicker({ value, onChange, min, max, suggested, label = "How
   const step = value >= 200 ? 25 : 10;
   const set = (v: number) => onChange(Math.max(min, Math.round(v)));
   const advice = stakeAdvice(value, suggested, STAKE_WARN_MULTIPLE);
-  const over = max !== undefined && value > max;
+  const over = max !== undefined && value > max + 1;
   return (
     <fieldset>
       <legend className="mb-2 text-sm text-muted">{label}</legend>

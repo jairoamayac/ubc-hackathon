@@ -328,13 +328,15 @@ export default function CrewsApp() {
           // the whole free amount can come up short. Keep a 1-cent cushion: move it in when the balance allows,
           // otherwise lock 1 cent less.
           const CUSHION = 0.01;
-          const freeHere = liveValue(c, snap, now);
+          // Use what the network says is in the pot now, not the on-screen figure that also counts yield accruing
+          // since the last read: that one can be a few cents too high and made the lock come up short.
+          const freeHere = Math.floor((c.me?.value ?? 0) * 100) / 100;
           const need = stake + CUSHION - freeHere;
           const moveIn = need > 0 ? Math.min(snap.cash, Math.ceil(need * 100) / 100) : 0;
           const lockUsd = Math.min(stake, Math.floor((freeHere + moveIn - CUSHION) * 100) / 100);
           const floor = join ? join.stakeUsd : minStake;
           if (lockUsd < floor) {
-            setToast({ text: `Add a little more money: the minimum here is ${usd(floor)}.`, tone: "err" });
+            setToast({ text: lockUsd > 0 && lockUsd < stake ? `You have ${usd(Math.max(0, lockUsd))} available. Add a little more money to lock ${usd(floor)}.` : `Add a little more money: the minimum here is ${usd(floor)}.`, tone: "err" });
             return false;
           }
           const ok = await act("lock", async () => {

@@ -2,11 +2,11 @@
 
 // Demo screens, part 2: goal detail, feed, vote, dispute and appeal, results, profile.
 // Look: design/kept-v5 ("Lila y mandarina"). Logic and copy rules unchanged from the Forest version.
-import { Check, ImagePlus, Loader2, Plus } from "lucide-react";
+import { Check, ImagePlus, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, LEAVE_EARLY_LOSS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import {
-  CONFIRMS_NEEDED, FRIENDS, GROUP_NAME, NAMES, onTheLine, pot, results,
+  CONFIRMS_NEEDED, REJECTS_BLOCK, FRIENDS, GROUP_NAME, NAMES, onTheLine, pot, results,
 } from "@/lib/demo/store";
 import { usd } from "@/lib/format";
 import { GroupTabs, type ScreenProps } from "./screens-a";
@@ -302,6 +302,7 @@ export function DisputeScreen({ s, d, go }: ScreenProps) {
           ) : (
             <h1 className="text-[28px] font-medium leading-tight tracking-tight">{s.stage === "resolved" || s.stage === "ended" ? "Decision saved" : "Grok Bot made a proposal"}</h1>
           )}
+          {s.rejects.length >= REJECTS_BLOCK && <p role="status" className="rounded-2xl bg-white p-4 text-sm text-danger">The group did not confirm Grok&apos;s proposal ({s.rejects.length} of 4 rejected), so your day counts as missed.</p>}
           {s.disputeStep >= 3 && <VerdictCard confidence={92} reasons={REASONS} confirms={confirmed} needed={CONFIRMS_NEEDED} total={friends.length} />}
           <ol className="card space-y-3 p-5" aria-label="Dispute steps">
             {STEPS.map((label, i) => {
@@ -328,6 +329,8 @@ export function DisputeScreen({ s, d, go }: ScreenProps) {
                       <span className="flex items-center gap-2"><Avatar id={id} size={28} /> {NAMES[id]}</span>
                       {ok ? (
                         <span className="pill min-h-7 bg-forest text-white"><Check className="h-3.5 w-3.5" aria-hidden /> Confirmed</span>
+                      ) : s.rejects.includes(id) ? (
+                        <span className="pill min-h-7 bg-danger text-white"><X className="h-3.5 w-3.5" aria-hidden /> Rejected</span>
                       ) : s.stage === "proposed" ? (
                         <span className="flex items-center gap-2">
                           <button onClick={() => d({ type: "confirm", id })} className="btn btn-approve btn-sm min-h-9 px-3 text-sm" aria-label={`Confirm as ${NAMES[id]}`}>Confirm</button>

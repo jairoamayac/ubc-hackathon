@@ -46,7 +46,11 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
     return <Page><Header title="New goal" onBack={onBack} /><p className="text-muted">Create or join a group first.</p></Page>;
   }
   const available = cash + freeIn(crew);
-  const tooMuch = stake > available + 1e-9;
+  // A few cents short (e.g. $49.99 of $50) is fine: lock what is there instead of asking to add money.
+  const maxStake = Math.floor((available + 1e-9) * 100) / 100;
+  const tooMuch = stake > maxStake + 1 || Math.min(stake, maxStake) < min;
+  const stakeNow = Math.min(stake, maxStake);
+  const shown = tooMuch ? stake : stakeNow;
   const veryHigh = stake > suggested * STAKE_WARN_MULTIPLE;
   const endsAt = join ? join.challenge.endsAt : now + minutes * 60;
   const back = () => (step === 1 ? onBack() : setStep(step - 1));
@@ -68,8 +72,9 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
           {join && <p className="-mt-2 text-sm text-muted">Round in {crew.name}: {roundTitle(join)}</p>}
           <label className="block">
             <span className="sr-only">Your goal</span>
-            <input value={goal} autoFocus onChange={(e) => { setGoal(e.target.value.slice(0, 80)); setCoach(null); }} placeholder="I want to run more"
-              className="w-full rounded-2xl border-[1.5px] border-ink bg-white px-4 py-4 text-lg outline-none placeholder:text-muted/70" />
+            <textarea value={goal} rows={2} autoFocus onChange={(e) => { setGoal(e.target.value.replace(/\s*\n+\s*/g, " ").slice(0, 80)); setCoach(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="I want to run more"
+              className="w-full resize-none rounded-2xl border-[1.5px] border-ink bg-white px-4 py-3.5 text-lg leading-snug outline-none placeholder:text-muted/70" />
           </label>
           <fieldset>
             <legend className="mb-2 text-sm text-muted">Category</legend>
@@ -77,7 +82,7 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
               {CATEGORIES.map((c) => (
                 <button type="button" key={c.id} aria-pressed={cat === c.id}
                   onClick={() => { setCat(c.id); if (!goal.trim() && c.idea) setGoal(c.idea); }}
-                  className={`relative flex h-[76px] flex-col items-start justify-between rounded-[18px] p-2.5 text-left text-sm font-medium ${c.tone} ${cat === c.id ? "ring-2 ring-ink" : ""}`}>
+                  className={`relative flex min-h-[76px] flex-col items-start justify-between gap-1 rounded-[18px] p-2.5 text-left text-sm font-medium leading-tight ${c.tone} ${cat === c.id ? "ring-2 ring-ink" : ""}`}>
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/70">{c.icon}</span>
                   {c.label}
                   {cat === c.id && <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white"><Check className="h-3 w-3" aria-hidden /></span>}
@@ -154,10 +159,10 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
         <form className="flex flex-col gap-4" onSubmit={async (e) => {
           e.preventDefault();
           if (tooMuch || busy || (veryHigh && !sure)) return;
-          await onLock({ crew, goal: goal.trim(), stake, minutes, minStake: Math.min(minStake, stake) });
+          await onLock({ crew, goal: goal.trim(), stake: stakeNow, minutes, minStake: Math.min(minStake, stakeNow) });
         }}>
           <h1 className="text-[28px] font-medium leading-tight tracking-tight">How much is on the line?</h1>
-          <StakePicker value={stake} onChange={(v) => { setStake(v); setSure(false); }} min={min} max={Math.floor(available)} suggested={suggested} />
+          <StakePicker value={stake} onChange={(v) => { setStake(v); setSure(false); }} min={min} max={maxStake} suggested={suggested} />
           {veryHigh && !tooMuch && (
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} className="mt-1 h-5 w-5 accent-[#2E2260]" />
@@ -177,9 +182,9 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
             <p className="text-sm">Summary</p>
             <p className="mt-1 max-w-[75%] text-xl font-medium leading-tight">{goal.trim()}</p>
             <p className="mt-1 text-sm">Ends {dateLabel(endsAt)}</p>
-            <p className="mt-3 flex items-center gap-3"><span className="num text-[40px] leading-none">{usd(stake)}</span><LockedPill /></p>
+            <p className="mt-3 flex items-center gap-3"><span className="num text-[40px] leading-none">{usd(shown)}</span><LockedPill /></p>
             <ul className="mt-4 space-y-2 text-sm">
-              <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> Keep it and your {usd(stake)} comes back. Missed stakes are split with friends who kept theirs.</li>
+              <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> Keep it and your {usd(shown)} comes back. Missed stakes are split with friends who kept theirs.</li>
               <li className="flex gap-2"><span aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-center leading-4">×</span> Miss it: {KEEPERS_PERCENT}% goes to friends who kept theirs, {FEE_PERCENT}% to {PROJECT_NAME}.</li>
             </ul>
           </section>

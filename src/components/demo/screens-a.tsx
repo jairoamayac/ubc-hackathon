@@ -295,7 +295,7 @@ export function NewGoalScreen({ s, d, go }: ScreenProps) {
           <section className="surface-lilac space-y-2 p-5 text-sm" aria-live="polite" aria-label="Summary">
             <Icon3D name="padlock-key" size={92} className="float absolute -right-1 -top-1" />
             <p>Summary</p>
-            <p className="pr-20 text-[20px] font-medium leading-tight">{goal} · {deadlineLabel}</p>
+            <p className="pr-20 text-[20px] font-medium leading-tight">{goal.toLowerCase().includes(deadlineLabel.toLowerCase()) ? goal : `${goal} · ${deadlineLabel}`}</p>
             <div className="flex items-center gap-3 pb-1"><p className="big text-[52px]">{usd(stake).replace(".00", "")}</p><LockedPill>Locked</LockedPill></div>
             <div className="space-y-2 border-t border-deep/20 pt-3">
               <p className="flex gap-2"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-locked text-forest"><Check className="h-3 w-3" aria-hidden /></span><span><span className="font-semibold">Keep your word:</span> {usd(stake)} back, plus {KEEPERS_PERCENT}% of forfeits shared by stake.</span></p>

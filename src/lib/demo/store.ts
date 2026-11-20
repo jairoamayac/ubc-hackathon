@@ -37,6 +37,8 @@ export type DemoState = {
   coachNote: string;
   votes: { approve: PersonId[]; dispute: PersonId[] };
   confirms: PersonId[];
+  /** Friends who rejected Grok's proposal (two rejections out of four mean it cannot reach 3 confirmations). */
+  rejects: PersonId[];
   disputeStep: DisputeStep;
   disputeReason: string;
   proofNote: string;
@@ -74,6 +76,7 @@ export const initial = (): DemoState => ({
   coachNote: "",
   votes: { approve: [], dispute: [] },
   confirms: [],
+  rejects: [],
   disputeStep: 0,
   disputeReason: "",
   proofNote: "",
@@ -112,6 +115,8 @@ const say = (s: DemoState, from: Msg["from"], text: string, kind: Msg["kind"] = 
 /** People who count as having put money in and who can vote or confirm (everyone but the person being judged). */
 export const voters = (s: DemoState) => s.people.filter((p) => p.stake > 0 && p.id !== "martin");
 export const CONFIRMS_NEEDED = 3; // 3 of 4
+/** Rejections after which the proposal can no longer reach CONFIRMS_NEEDED (4 friends). */
+export const REJECTS_BLOCK = 2;
 
 export function reducer(s: DemoState, a: Action): DemoState {
   switch (a.type) {
@@ -178,7 +183,7 @@ export function reducer(s: DemoState, a: Action): DemoState {
       return n;
     }
     case "confirm": {
-      if (s.stage !== "proposed" || s.confirms.includes(a.id)) return s;
+      if (s.stage !== "proposed" || s.confirms.includes(a.id) || s.rejects.includes(a.id)) return s;
       const confirms = [...s.confirms, a.id];
       let n: DemoState = { ...s, confirms };
       n = { ...n, ...say(n, a.id, "Confirmed Grok's proposal.", "vote") };
@@ -188,8 +193,17 @@ export function reducer(s: DemoState, a: Action): DemoState {
       }
       return n;
     }
-    case "reject":
-      return s.stage === "proposed" ? { ...s, ...say(s, a.id, "Rejected the proposal.", "vote") } : s;
+    case "reject": {
+      if (s.stage !== "proposed" || s.rejects.includes(a.id) || s.confirms.includes(a.id)) return s;
+      const rejects = [...s.rejects, a.id];
+      let n: DemoState = { ...s, rejects };
+      n = { ...n, ...say(n, a.id, "Rejected Grok's proposal.", "vote") };
+      if (rejects.length >= REJECTS_BLOCK) {
+        n = { ...n, stage: "resolved", disputeStep: 4, people: setPerson(n, "martin", { status: "missed" }) };
+        n = { ...n, ...say(n, "system", `Decision saved: the group did not confirm Martin's proof (${rejects.length} of 4 rejected).`, "system") };
+      }
+      return n;
+    }
     case "myVote": {
       if (s.myVote) return s;
       const n: DemoState = { ...s, myVote: a.approve ? "approve" : "dispute" };
@@ -197,7 +211,7 @@ export function reducer(s: DemoState, a: Action): DemoState {
     }
     case "deadline": {
       if (s.stage !== "resolved") return s;
-      const people = s.people.map((p): Person => ({ ...p, status: p.id === "martin" || p.id === "ana" ? "kept" : "missed" }));
+      const people = s.people.map((p): Person => ({ ...p, status: (p.id === "martin" && s.rejects.length < REJECTS_BLOCK) || p.id === "ana" ? "kept" : "missed" }));
       const n: DemoState = { ...s, stage: "ended", hoursLeft: 0, people };
       return { ...n, ...say(n, "system", "Time is up. Results are in.", "system") };
     }
@@ -250,7 +264,7 @@ export function nextAutopilot(s: DemoState): Action | null {
     case "appeal":
       return s.disputeStep < 3 ? { type: "disputeStep", step: (s.disputeStep + 1) as DisputeStep } : null;
     case "proposed": {
-      const f = (["ana", "cara", "dani"] as const).find((id) => !s.confirms.includes(id));
+      const f = (["ana", "cara", "dani", "ben"] as const).find((id) => !s.confirms.includes(id) && !s.rejects.includes(id));
       return f ? { type: "confirm", id: f } : null;
     }
     case "resolved":

@@ -62,8 +62,8 @@ export function GrokGroup({ groupId, pacts }: { groupId: string; pacts: Challeng
   return (
     <section aria-label="Grok check-in" className="card space-y-3 p-5">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 font-medium"><MessageCircle className="h-4 w-4 text-forest" aria-hidden /> Grok check-in</h2>
-        <button onClick={ask} disabled={sending || job?.status === "pending"} className="min-h-11 rounded-full border border-stone px-4 text-sm font-medium disabled:opacity-45">
+        <h2 className="flex min-w-0 items-center gap-2 font-medium"><MessageCircle className="h-4 w-4 text-forest" aria-hidden /> Grok check-in</h2>
+        <button onClick={ask} disabled={sending || job?.status === "pending"} className="min-h-11 shrink-0 whitespace-nowrap rounded-full border border-stone px-4 text-sm font-medium disabled:opacity-45">
           {job?.status === "pending" ? "Grok is writing…" : messages.length ? "Ask again" : "Ask Grok"}
         </button>
       </div>
