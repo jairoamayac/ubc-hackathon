@@ -21,7 +21,7 @@ export function describe(a: Action | null, s: DemoState): string {
     case "submitProof": return "Martin sends proof of his run";
     case "vote": return a.approve ? `${a.id[0].toUpperCase()}${a.id.slice(1)} approves` : `${a.id[0].toUpperCase()}${a.id.slice(1)} disputes the proof`;
     case "appeal": return "Martin appeals with Grok";
-    case "disputeStep": return a.step === 1 ? "Detected on-chain" : a.step === 2 ? "Grok Bot reviews" : "Grok Bot proposes a verdict";
+    case "disputeStep": return a.step === 1 ? "Dispute received" : a.step === 2 ? "Grok Bot reviews" : "Grok Bot proposes a verdict";
     case "confirm": return `${a.id[0].toUpperCase()}${a.id.slice(1)} confirms the proposal`;
     case "deadline": return "Time runs out";
     case "collect": return "Martin collects";
@@ -170,7 +170,7 @@ export default function DemoApp() {
   return (
     <Shell tone={route === "login" ? "lilac" : "paper"}>
       {screen}
-      <div className={`sticky bottom-0 z-20 space-y-2 px-4 pb-3 pt-6 ${route === "login" ? "" : "bg-linear-to-t from-paper via-paper/90 to-transparent"}`}>
+      <div className={`sticky bottom-0 z-20 space-y-1.5 px-4 pb-1.5 pt-4 ${route === "login" ? "" : "bg-linear-to-t from-paper via-paper/90 to-transparent"}`}>
         {panel ? (
           <section aria-label="Demo controls" className="rounded-[20px] bg-white p-3 text-sm shadow-[0_12px_28px_rgba(46,34,96,0.18)]">
             <p className="mono text-xs uppercase tracking-widest text-muted">Demo controls · simulated</p>
@@ -180,12 +180,13 @@ export default function DemoApp() {
               <button onClick={() => setAuto((v) => !v)} disabled={!next && !auto} aria-pressed={auto} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><Play className="h-4 w-4" aria-hidden /> {auto ? "Pause" : "Play all"}</button>
               <button onClick={reset} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><RotateCcw className="h-4 w-4" aria-hidden /> Reset</button>
             </div>
-            <button onClick={() => setPanel(false)} className="mt-2 min-h-9 text-xs text-muted underline">Hide</button>
           </section>
-        ) : (
-          <button onClick={() => setPanel(true)} className="ml-auto flex min-h-9 items-center rounded-full bg-white/90 px-3 text-xs text-muted shadow-[0_6px_16px_rgba(46,34,96,0.15)]">Demo controls (D)</button>
-        )}
+        ) : null}
         {showNav && tab && <BottomNav tab={tab} onTab={(t) => setRoute(t === "me" ? "me" : t === "group" ? "group" : "home")} />}
+        {/* Tiny hint under the bar: never covers content. D still advances, the panel has Play all. */}
+        <button onClick={() => setPanel((v) => !v)} aria-expanded={panel} className={`mx-auto flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] ${route === "login" ? "text-deep/70" : "text-muted"}`}>
+          <span className="mono rounded bg-stone2 px-1 text-[10px] text-muted">D</span> {panel ? "Hide demo controls" : "Demo controls"}
+        </button>
       </div>
     </Shell>
   );
