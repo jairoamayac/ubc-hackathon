@@ -1,7 +1,7 @@
 "use client";
 
 // Who is signed in. Two modes, chosen at build time by NEXT_PUBLIC_PRIVY_APP_ID:
-//  - "privy": Google or email sign-in, account created and kept by Privy
+//  - "privy": email sign-in, account created and kept by Privy
 //  - "local": the old demo (a first name, key kept on this device), used when no Privy app id is set
 import { createContext, useContext } from "react";
 import type { OwnerSigner } from "@/lib/house-money/solana/signer";

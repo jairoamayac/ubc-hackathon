@@ -8,9 +8,12 @@
 //   POST /api/coach              task "coach": Grok turns a wish into a measurable goal with a stake that hurts
 //   POST /api/group/ask          task "group": Grok writes reminders and nudges for the group
 //   GET  /api/jobs/:id           status and result of a coach or group job, for the app to poll
-//   POST /api/streams/quicknode  a QuickNode Stream posts DisputeOpened events here (needs the program to emit the log)
+//   POST /api/streams/quicknode  a QuickNode Stream posts the program's `KEPT:DisputeOpened` log here (HMAC-signed with X-QN-*, or the legacy x-kept-stream-secret header; see worker/quicknode.ts)
+//   GET  /api/disputes?challenge=<pubkey>  the disputes the Stream saw on-chain for one pact (and the council case, if any)
 // The council only proposes. Nothing here signs a transaction or moves money.
-// Secrets (never in the repo): GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY, QUICKNODE_STREAM_SECRET (optional).
+// Secrets (never in the repo): GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY, QUICKNODE_STREAM_SECRET (the Stream's security token).
+import { PROGRAM_ID } from "../src/lib/house-money/solana/hm";
+import { disputesFromText, parseDisputeEvents, readStreamBody, verifyQuickNodeSignature, type ChainDispute } from "./quicknode";
 import { isVerdict, VERDICTS, type DisputeView, type Juror, type Tally, type VerdictKind } from "../src/lib/grok";
 
 interface KV {
@@ -122,6 +125,10 @@ async function createDispute(
     input: { challenge: clip(d.challenge, 64), member: clip(d.member, 60), goal: clip(d.goal, 200) },
   };
   await env.DISPUTES.put(`d:${id}`, JSON.stringify(record), { expirationTtl: TTL });
+  // Lets the QuickNode route attach the on-chain event to this case instead of starting a second council.
+  const challengeKey = clip(d.challenge, 64);
+  const memberKey = clip(d.member_key, 64);
+  if (BASE58.test(challengeKey) && BASE58.test(memberKey)) await env.DISPUTES.put(`link:${challengeKey}:${memberKey}`, id, { expirationTtl: TTL });
   if (image) await env.DISPUTES.put(`img:${id}`, image.bytes, { expirationTtl: TTL });
 
   const payload = {
@@ -428,28 +435,95 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
     return new Response(bytes, { headers: { "content-type": rec.imageType, "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" } });
   }
 
-  if (path === "/api/streams/quicknode" && req.method === "POST") {
-    // Ready for the day the program emits "KEPT:DisputeOpened challenge=.. member=.. disputer=..".
-    const secret = env.QUICKNODE_STREAM_SECRET;
-    const given = req.headers.get("x-kept-stream-secret") ?? "";
-    if (!secret || !given || !same(await sha256(given), await sha256(secret))) return json({ error: "Unauthorized" }, 401);
-    const text = await req.text();
-    if (text.length > 2_000_000) return json({ error: "Request too large." }, 413);
-    const found = [...text.matchAll(/KEPT:DisputeOpened\s+challenge=([1-9A-HJ-NP-Za-km-z]{32,44})\s+member=([1-9A-HJ-NP-Za-km-z]{32,44})(?:\s+disputer=([1-9A-HJ-NP-Za-km-z]{32,44}))?/g)];
-    const started: string[] = [];
-    for (const [, challenge, member, disputer] of found.slice(0, 5)) {
-      const dedupe = `qn:${challenge}:${member}:${disputer ?? ""}`;
-      if (env.DISPUTES && (await env.DISPUTES.get(dedupe))) continue; // Streams can deliver the same block twice.
-      if (env.DISPUTES) await env.DISPUTES.put(dedupe, "1", { expirationTtl: 3600 });
-      const out = await createDispute(env, baseUrl(env, url), {
-        challenge, member, disputer,
-        goal: "Opened on-chain: read the goal from the pact.",
-        dispute_reason: "A DisputeOpened event was detected on-chain by QuickNode Streams.",
-      });
-      if (typeof out.body.dispute_id === "string") started.push(out.body.dispute_id);
-    }
-    return json({ ok: true, matched: found.length, started });
+  if (path === "/api/disputes" && req.method === "GET") {
+    const challenge = url.searchParams.get("challenge") ?? "";
+    if (!BASE58.test(challenge)) return json({ error: "challenge must be a pact address." }, 400);
+    if (!env.DISPUTES) return json({ challenge, disputes: [] });
+    const raw = await env.DISPUTES.get(`ql:${challenge}`);
+    return json({ challenge, disputes: raw ? (JSON.parse(raw) as ChainEvent[]) : [] });
   }
 
+  if (path === "/api/streams/quicknode" && req.method === "POST") return handleStream(req, url, env);
+
   return null;
+}
+
+/** What we keep for each dispute the Stream saw. */
+interface ChainEvent extends ChainDispute {
+  received_at: number;
+  /** Grok council case for this dispute: linked to the app's appeal, started by this event, or why not. */
+  council: "linked" | "started" | "unavailable";
+  dispute_id?: string;
+}
+
+const EVENT_LIMIT = 20; // events handled per delivery
+const LIST_LIMIT = 50; // events kept per pact
+
+/** QuickNode Stream webhook: verifies the HMAC, stores each dispute event once, and makes sure a council case exists. */
+async function handleStream(req: Request, url: URL, env: GrokEnv): Promise<Response> {
+  const secret = env.QUICKNODE_STREAM_SECRET;
+  if (!secret) return json({ error: "The QuickNode Stream is not configured on this server." }, 503);
+  const text = await readStreamBody(req, 2_000_000).catch(() => undefined);
+  if (text === undefined) return json({ error: "Unreadable body." }, 400);
+  if (text === null) return json({ error: "Request too large." }, 413);
+  // QuickNode's own scheme first (X-QN-Signature/Nonce/Timestamp). Fallback: the legacy custom header
+  // `x-kept-stream-secret: <QUICKNODE_STREAM_SECRET>` (a Stream can send it as a custom header).
+  const legacy = req.headers.get("x-kept-stream-secret") ?? "";
+  const signed = await verifyQuickNodeSignature(req.headers, text, secret);
+  if (!signed && !(legacy && same(await sha256(legacy), await sha256(secret)))) return json({ error: "Unauthorized" }, 401);
+  if (!env.DISPUTES) return json({ error: "Dispute storage is not configured on this server." }, 503);
+  let events: ChainDispute[];
+  try {
+    events = parseDisputeEvents(JSON.parse(text), PROGRAM_ID.toBase58()).slice(0, EVENT_LIMIT);
+  } catch {
+    // Legacy senders may post plain text containing the log line.
+    if (signed) return json({ error: "Invalid JSON." }, 400);
+    events = disputesFromText(text).slice(0, EVENT_LIMIT);
+  }
+  const stored: string[] = [];
+  let duplicates = 0;
+  for (const ev of events) {
+    // The same block can arrive twice (retries, reorgs): the first copy wins.
+    const key = `qe:${ev.signature ?? "nosig"}:${ev.challenge}:${ev.member}:${ev.disputer}`;
+    if (await env.DISPUTES.get(key)) { duplicates++; continue; }
+
+    const record: ChainEvent = { ...ev, received_at: Date.now(), council: "unavailable" };
+    const linked = await env.DISPUTES.get(`link:${ev.challenge}:${ev.member}`);
+    if (linked && UUID.test(linked)) {
+      record.council = "linked";
+      record.dispute_id = linked;
+      const raw = await env.DISPUTES.get(`d:${linked}`);
+      if (raw) {
+        const rec = JSON.parse(raw) as Record_;
+        rec.onchain = { signature: ev.signature, slot: ev.slot, blockTime: ev.blockTime, reason: ev.reason };
+        await env.DISPUTES.put(`d:${linked}`, JSON.stringify(rec), { expirationTtl: TTL });
+      }
+    } else {
+      try {
+        const out = await createDispute(env, baseUrl(env, url), {
+          challenge: ev.challenge, member: ev.member, disputer: ev.disputer,
+          goal: "Opened on-chain: read the goal from the pact.",
+          dispute_reason: "A dispute was opened on-chain and detected by QuickNode Streams.",
+        });
+        if (typeof out.body.dispute_id === "string") {
+          record.council = "started";
+          record.dispute_id = out.body.dispute_id;
+          const raw = await env.DISPUTES.get(`d:${out.body.dispute_id}`);
+          if (raw) {
+            const rec = JSON.parse(raw) as Record_;
+            rec.onchain = { signature: ev.signature, slot: ev.slot, blockTime: ev.blockTime, reason: ev.reason };
+            await env.DISPUTES.put(`d:${out.body.dispute_id}`, JSON.stringify(rec), { expirationTtl: TTL });
+          }
+        }
+      } catch { /* Grok Bot unreachable: the event is still recorded, and the Stream must not pause on our account. */ }
+    }
+
+    await env.DISPUTES.put(key, "1", { expirationTtl: TTL });
+    const listKey = `ql:${ev.challenge}`;
+    const list = JSON.parse((await env.DISPUTES.get(listKey)) ?? "[]") as ChainEvent[];
+    list.push(record);
+    await env.DISPUTES.put(listKey, JSON.stringify(list.slice(-LIST_LIMIT)), { expirationTtl: TTL });
+    stored.push(ev.signature ?? key);
+  }
+  return json({ ok: true, matched: events.length, stored: stored.length, duplicates });
 }

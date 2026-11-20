@@ -258,6 +258,7 @@ const SOCIAL_IX = {
   finalize_entry: [74, 183, 224, 180, 84, 147, 96, 134],
   join_with_goal: [164, 7, 145, 205, 198, 59, 220, 112],
   take_fee: [78, 179, 29, 200, 7, 172, 106, 91],
+  open_dispute: [137, 25, 99, 119, 23, 223, 161, 42],
 } as const;
 export const SOCIAL_ACCOUNT_DISC = {
   Profile: [184, 101, 165, 188, 95, 63, 127, 188],
@@ -268,12 +269,13 @@ export const SOCIAL_ACCOUNT_DISC = {
   Vote: [96, 91, 104, 57, 145, 35, 172, 155],
   GoalNote: [159, 11, 5, 248, 151, 135, 70, 170],
   FeeTaken: [231, 203, 37, 243, 74, 2, 31, 230],
+  Dispute: [36, 49, 241, 67, 40, 36, 241, 74],
 } as const;
 /** Discriminators of social instructions where account #0 only pays rent (used by the edge API). */
 export const SOCIAL_PAYER_IXS = [
   SOCIAL_IX.set_profile, SOCIAL_IX.create_bet, SOCIAL_IX.place_bet, SOCIAL_IX.vote_bet,
   SOCIAL_IX.create_challenge, SOCIAL_IX.join_challenge, SOCIAL_IX.vote_entry,
-  SOCIAL_IX.join_with_goal, SOCIAL_IX.take_fee,
+  SOCIAL_IX.join_with_goal, SOCIAL_IX.take_fee, SOCIAL_IX.open_dispute,
 ].map((d) => d.join(","));
 
 export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
@@ -287,6 +289,7 @@ export const challengePda = (crew: PublicKey, id: bigint) => pda([enc("challenge
 export const entryPda = (challenge: PublicKey, owner: PublicKey) => pda([enc("entry"), challenge.toBytes(), owner.toBytes()]);
 export const votePda = (target: PublicKey, voter: PublicKey) => pda([enc("vote"), target.toBytes(), voter.toBytes()]);
 export const goalPda = (entry: PublicKey) => pda([enc("goal"), entry.toBytes()]);
+export const disputePda = (entry: PublicKey) => pda([enc("dispute"), entry.toBytes()]);
 export const feePda = (challenge: PublicKey) => pda([enc("fee"), challenge.toBytes()]);
 /** Platform share of forfeits (mirrors social::PLATFORM_FEE_BPS). */
 export const PLATFORM_FEE_BPS = 500n;
@@ -416,6 +419,29 @@ export function takeFeeIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, ch
   return ix([m(payer, true, true), m(configPda()), m(mint), m(crew, true), m(crewVaultPda(crew), true), m(houseVaultPda(), true),
     m(challenge), m(feePda(challenge), true), m(TOKEN_PROGRAM_ID), m(SystemProgram.programId)],
     new W().bytes(SOCIAL_IX.take_fee).done());
+}
+
+/** Why a result is contested (mirrors social::DISPUTE_*). */
+export const DISPUTE_REASON = { OTHER: 0, PROOF: 1, APPEAL: 2, FALSE_PASS: 3 } as const;
+/** Prefix of the log line the program writes when a dispute opens (what the QuickNode Stream filters on). */
+export const DISPUTE_LOG_PREFIX = "KEPT:DisputeOpened";
+
+/**
+ * A participant contests one person's result in a finished pact. Moves no money; the program logs
+ * `KEPT:DisputeOpened ...` for the off-chain listener (QuickNode Stream -> Worker -> Grok Bot appeals court).
+ */
+export function openDisputeIx(payer: PublicKey, opener: PublicKey, challenge: PublicKey, entryOwner: PublicKey, reason: number) {
+  const entry = entryPda(challenge, entryOwner);
+  return ix([m(payer, true, true), m(opener, false, true), m(challenge), m(entry), m(entryPda(challenge, opener)),
+    m(disputePda(entry), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.open_dispute).u8(reason).done());
+}
+
+export interface DisputeAccount { address: PublicKey; challenge: PublicKey; entry: PublicKey; member: PublicKey; opener: PublicKey; reason: number; openedAt: bigint }
+export function decodeDispute(address: PublicKey, d: Uint8Array): DisputeAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Dispute)) throw new Error("not a Dispute account");
+  const r = new R(d);
+  return { address, challenge: r.pk(), entry: r.pk(), member: r.pk(), opener: r.pk(), reason: r.u8(), openedAt: r.i64() };
 }
 
 // ---------------------------------------------------------------- real yield: Kamino Lend (klend)

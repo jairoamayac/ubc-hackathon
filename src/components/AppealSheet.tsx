@@ -42,7 +42,12 @@ function simulateReview(goal: string, accepted: boolean): Verdict {
   };
 }
 
-export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: () => void }) {
+export function AppealSheet({ pact, onClose, recordDispute }: {
+  pact: ChallengeView;
+  onClose: () => void;
+  /** Writes the dispute into the pact's record (a sponsored transaction). Resolves when it is saved. */
+  recordDispute?: () => Promise<unknown>;
+}) {
   const goal = pact.entries.find((e) => e.isMe)?.goal ?? "your goal";
   const stake = pact.mine?.usd ?? 0;
 
@@ -56,6 +61,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
   const [liveError, setLiveError] = useState<string | null>(null);
   const [waited, setWaited] = useState(0);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [recorded, setRecorded] = useState<"saved" | "failed" | null>(null);
 
   // The preview URL is created in the handler (not in an effect) and released when replaced or on unmount.
   const urlRef = useRef<string | null>(null);
@@ -127,7 +133,12 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
         member_reply: note,
         proof: { description: note || (file ? "Screenshot attached." : "No screenshot attached.") },
         image_data_url: image,
+        member_key: me?.entry.owner.toBase58(),
       });
+      // Case first, record second: when the record reaches the Worker it finds this case and attaches to it.
+      if (recordDispute) {
+        try { await recordDispute(); setRecorded("saved"); } catch { setRecorded("failed"); }
+      }
       setDispute({ dispute_id, status: "pending", created_at: Date.now() });
       setPhase("council");
       setWaited(0);
@@ -139,7 +150,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
     }
   };
 
-  if (phase === "council" && dispute) return <CouncilView dispute={dispute} goal={goal} stake={stake} waited={waited} onClose={onClose} onInstant={() => { if (polling.current) clearTimeout(polling.current); setPhase("form"); }} />;
+  if (phase === "council" && dispute) return <CouncilView dispute={dispute} goal={goal} stake={stake} waited={waited} recorded={recorded} onClose={onClose} onInstant={() => { if (polling.current) clearTimeout(polling.current); setPhase("form"); }} />;
 
   if (phase === "reviewing") {
     return (
@@ -247,7 +258,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
 const VERDICT_LABEL = { KEPT: "Kept", MISSED: "Missed", NEEDS_MORE_EVIDENCE: "Needs more evidence" } as const;
 const LENS_LABEL: Record<string, string> = { criterion: "Does the proof meet the goal?", fraud: "Is it fraudulent?", fairness: "What do both sides say?" };
 
-function CouncilView({ dispute, goal, stake, waited, onClose, onInstant }: { dispute: DisputeView; goal: string; stake: number; waited: number; onClose: () => void; onInstant: () => void }) {
+function CouncilView({ dispute, goal, stake, waited, recorded, onClose, onInstant }: { dispute: DisputeView; goal: string; stake: number; waited: number; recorded: "saved" | "failed" | null; onClose: () => void; onInstant: () => void }) {
   if (dispute.status === "failed") {
     return (
       <div className="space-y-4" role="alert">
@@ -262,6 +273,8 @@ function CouncilView({ dispute, goal, stake, waited, onClose, onInstant }: { dis
       <div className="space-y-5 py-2" role="status" aria-live="polite">
         <div className="flex items-center gap-3"><Loader2 className="h-6 w-6 animate-spin text-deep" aria-hidden /><p className="font-medium">The Grok council is deliberating…</p></div>
         <Check3 items={["Case sent to Grok Bot", "Three jurors vote blind", "Votes are counted"]} step={waited < 8 ? 1 : 2} />
+        {recorded === "saved" && <p className="text-sm text-forest">Your dispute is saved in the pact&apos;s record{dispute.onchain ? " and our server has seen it" : ""}.</p>}
+        {recorded === "failed" && <p className="text-sm text-muted">We could not save it in the pact&apos;s record, but the council is still reviewing your case.</p>}
         <p className="text-sm text-muted">This can take a few minutes{waited > 0 ? ` (${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, "0")} so far)` : ""}. You can keep this open or come back.</p>
         <button onClick={onInstant} className="btn btn-quiet w-full">Use the instant demo judge instead</button>
       </div>
@@ -301,6 +314,7 @@ function CouncilView({ dispute, goal, stake, waited, onClose, onInstant }: { dis
           {dispute.reasons!.map((r) => <li key={r} className="py-2 text-sm">{r}</li>)}
         </ul>
       )}
+      {recorded === "saved" && <p className="text-sm text-forest">This dispute is saved in the pact&apos;s record.</p>}
       <p className="text-sm text-muted">Each juror voted for the verdict it expects the other honest jurors to reach. Grok proposes, your group sees it, and only then is the result settled.</p>
       <button onClick={onClose} className="btn btn-quiet w-full">Close</button>
     </div>
