@@ -17,6 +17,10 @@ interface Env {
   SPONSOR_KEY: string;
   RPC_URL: string;
   MINT: string;
+  /** Kamino Lend market, hmUSD reserve and its Pyth feed (optional: without them pots stay idle). */
+  KAMINO_MARKET?: string;
+  KAMINO_RESERVE?: string;
+  KAMINO_ORACLE?: string;
 }
 
 const COMPUTE_BUDGET = new PublicKey("ComputeBudget111111111111111111111111111111");
@@ -28,7 +32,13 @@ const PAYER_IXS = new Set([
   "153,26,89,45,252,243,183,62",
   "58,230,6,58,104,245,154,227",
   ...SOCIAL_PAYER_IXS,
+  // kamino_supply / kamino_redeem: the sponsor is the operator. The program only lets these move a pot's
+  // own dollars between its vault and cTokens owned by the pot's PDA, never anywhere else.
+  "145,46,142,2,176,57,162,159",
+  "143,225,240,130,123,5,160,84",
 ]);
+const KLEND = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
+const KLEND_REFRESH_RESERVE = "2,218,138,235,79,201,25,102";
 const MAX_TOPUP_USD = 500;
 const MAX_CU = 400_000;
 const MAX_CU_PRICE = 1_000_000n; // µlamports per compute unit
@@ -53,6 +63,9 @@ const worker = {
           mint: mint.toBase58(),
           sponsor: sponsor.publicKey.toBase58(),
           programId: PROGRAM_ID.toBase58(),
+          kamino: env.KAMINO_RESERVE && env.KAMINO_MARKET && env.KAMINO_ORACLE
+            ? { market: env.KAMINO_MARKET, reserve: env.KAMINO_RESERVE, pythOracle: env.KAMINO_ORACLE }
+            : null,
         });
       }
 
@@ -101,7 +114,7 @@ const b64 = (tx: Transaction) => btoa(String.fromCharCode(...tx.serialize()));
 /** Only sponsors calls to our program, and the sponsor may only appear as the rent payer. */
 function vet(tx: Transaction, sponsor: PublicKey): string | null {
   if (!tx.feePayer?.equals(sponsor)) return "Fee payer must be the sponsor.";
-  if (tx.instructions.length === 0 || tx.instructions.length > 5) return "Unexpected transaction.";
+  if (tx.instructions.length === 0 || tx.instructions.length > 7) return "Unexpected transaction.";
   for (const ix of tx.instructions) {
     if (ix.programId.equals(COMPUTE_BUDGET)) {
       // Cap what a sponsored transaction can cost: ≤ 400k CU at ≤ 1,000,000 µlamports/CU (~0.0004 SOL).
@@ -110,6 +123,11 @@ function vet(tx: Transaction, sponsor: PublicKey): string | null {
       if (kind === 2 && ix.data.length === 5 && view.getUint32(1, true) <= MAX_CU) continue;
       if (kind === 3 && ix.data.length === 9 && view.getBigUint64(1, true) <= MAX_CU_PRICE) continue;
       return "Priority fee above the sponsor's cap.";
+    }
+    if (ix.programId.equals(KLEND)) {
+      // Only Kamino's permissionless price/interest refresh, which Kamino requires before a supply or redeem.
+      if (Array.from(ix.data).join(",") === KLEND_REFRESH_RESERVE && !ix.keys.some((k) => k.pubkey.equals(sponsor))) continue;
+      return "Only Kept instructions can be sponsored.";
     }
     if (!ix.programId.equals(PROGRAM_ID)) return "Only Kept instructions can be sponsored.";
     const disc = Array.from(ix.data.subarray(0, 8)).join(",");

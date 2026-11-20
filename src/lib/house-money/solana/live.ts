@@ -7,7 +7,7 @@ import bs58 from "bs58";
 import { Buffer } from "buffer";
 import * as hm from "./hm";
 
-export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string }
+export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string; kamino?: { market: string; reserve: string; pythOracle: string } | null }
 
 export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
@@ -120,12 +120,31 @@ export class LiveClient {
   private conn: Connection;
   readonly mint: PublicKey;
   private sponsor: PublicKey;
+  /** Kamino Lend reserve where locked money earns interest while a pact runs (null: pots stay idle). */
+  readonly kamino: hm.KaminoReserve | null;
 
   private constructor(cfg: AppConfig) {
     this.owner = loadAccount();
     this.conn = new Connection(cfg.rpc, "confirmed");
     this.mint = new PublicKey(cfg.mint);
     this.sponsor = new PublicKey(cfg.sponsor);
+    this.kamino = cfg.kamino
+      ? { market: new PublicKey(cfg.kamino.market), reserve: new PublicKey(cfg.kamino.reserve), pythOracle: new PublicKey(cfg.kamino.pythOracle) }
+      : null;
+  }
+
+  /** Locked money goes to the Kamino lending pool in the same transaction (operator crank, sponsor signs). */
+  private supplyIxs(crew: PublicKey, amount: bigint) {
+    return this.kamino && amount > 0n
+      ? [hm.refreshReserveIx(this.kamino), hm.kaminoSupplyIx(this.sponsor, this.mint, crew, this.kamino, amount)]
+      : [];
+  }
+  /** Before money leaves a pot (payouts, fee, withdrawals), bring it back from Kamino with the interest. */
+  private async redeemIxs(crew: PublicKey) {
+    if (!this.kamino) return [];
+    const info = await this.conn.getAccountInfo(crew, "confirmed");
+    if (!info || hm.decodeCrewKamino(info.data).ctokens === 0n) return [];
+    return [hm.refreshReserveIx(this.kamino), hm.kaminoRedeemIx(this.sponsor, this.mint, crew, this.kamino)];
   }
 
   static async connect() {
@@ -159,7 +178,8 @@ export class LiveClient {
     const perDayRate = (config.apyBps / 10_000) * (config.timeWarp / 365);
 
     const views: CrewView[] = crews.map((c, i) => {
-      const vaultUnits = vaults[i] ? vaults[i]!.data.readBigUInt64LE(64) : 0n;
+      // A pot's assets = dollars in its vault + dollars it lent to Kamino (same rule as the program's crew_assets).
+      const vaultUnits = (vaults[i] ? vaults[i]!.data.readBigUInt64LE(64) : 0n) + c.kaminoPrincipal;
       const principal = hm.toUsd(c.totalPrincipal);
       const view: CrewView = {
         ...c,
@@ -214,12 +234,12 @@ export class LiveClient {
     return this.send(ixs);
   }
   /** Takes out a dollar amount (or everything) by burning the matching shares. */
-  withdraw(crew: CrewView, usd: number | "all") {
+  async withdraw(crew: CrewView, usd: number | "all") {
     const m = crew.me!.member;
     const shares = usd === "all" || usd >= crew.me!.value
       ? m.shares
       : (m.shares * hm.fromUsd(usd)) / hm.fromUsd(crew.me!.value);
-    return this.send([hm.withdrawIx(this.owner.publicKey, this.mint, crew.address, shares)]);
+    return this.send([...(await this.redeemIxs(crew.address)), hm.withdrawIx(this.owner.publicKey, this.mint, crew.address, shares)]);
   }
   openCall(crew: PublicKey, direction: 0 | 1, boost: number, usd: number) {
     return this.send([hm.openCallIx(this.sponsor, this.owner.publicKey, this.mint, crew, direction, boost, hm.fromUsd(usd))]);
@@ -246,7 +266,7 @@ export class LiveClient {
       this.conn.getAccountInfo(hm.crewVaultPda(crew)),
     ]);
     const c = hm.decodeCrew(crew, crewInfo!.data);
-    const vault = vaultInfo ? vaultInfo.data.readBigUInt64LE(64) : 0n;
+    const vault = (vaultInfo ? vaultInfo.data.readBigUInt64LE(64) : 0n) + c.kaminoPrincipal;
     const usd = (shares: bigint) => hm.toUsd(hm.assetsForShares(shares, c.totalShares, vault));
     const ms = members.map((a) => hm.decodeMember(a.pubkey, a.account.data));
 
@@ -342,7 +362,7 @@ export class LiveClient {
   private async usdToShares(crew: PublicKey, usdAmount: number) {
     const [ci, vi] = await this.conn.getMultipleAccountsInfo([crew, hm.crewVaultPda(crew)]);
     const c = hm.decodeCrew(crew, ci!.data);
-    const vault = vi ? vi.data.readBigUInt64LE(64) : 0n;
+    const vault = (vi ? vi.data.readBigUInt64LE(64) : 0n) + c.kaminoPrincipal;
     return (hm.fromUsd(usdAmount) * (c.totalShares + 1000n)) / (vault + 1n);
   }
 
@@ -375,7 +395,8 @@ export class LiveClient {
   }
   /** Put money on your own goal. */
   joinWithGoal(crew: PublicKey, challenge: PublicKey, goal: string, stakeUsd: number) {
-    return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]);
+    return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd)),
+      ...this.supplyIxs(crew, hm.fromUsd(stakeUsd))]);
   }
   /** Start a commitment round and put money on your goal in the same tap. */
   startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number) {
@@ -385,14 +406,16 @@ export class LiveClient {
     return this.send([
       hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(minStakeUsd), endsAt),
       hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd)),
+      ...this.supplyIxs(crew, hm.fromUsd(stakeUsd)),
     ]);
   }
   voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
     return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
   }
   /** Collect your result. The first person to collect also moves the platform's 5% (sponsored, once). */
-  claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
-    const ixs = feeTaken ? [] : [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge)];
+  async claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
+    const ixs = await this.redeemIxs(crew);
+    if (!feeTaken) ixs.push(hm.takeFeeIx(this.sponsor, this.mint, crew, challenge));
     ixs.push(hm.claimChallengeIx(this.owner.publicKey, crew, challenge));
     return this.send(ixs);
   }
@@ -414,7 +437,8 @@ export class LiveClient {
 
   private async send(ixs: TransactionInstruction[]) {
     const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
-    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(), ...ixs);
+    const usesKamino = ixs.some((i) => i.programId.equals(hm.KLEND_PROGRAM_ID));
+    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(usesKamino ? 400_000 : 120_000), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
     if (needsOwner) tx.partialSign(this.owner);
     const b64 = tx.serialize({ requireAllSignatures: false }).toString("base64");

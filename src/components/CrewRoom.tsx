@@ -384,17 +384,17 @@ export function ResultsScreen({ v, crewName, now, busy, onBack, onVote, onCollec
       </section>
 
       {phase === "settled" && (
-        <div className="grid grid-cols-[1fr_auto] gap-3">
+        <div className="flex flex-col gap-3">
           <ul className="card divide-y divide-stone px-4 py-1" aria-label="Who gets what">
             {o.rows.map(({ e, state, payout }) => (
               <li key={e.entry.address.toBase58()} className="flex items-center gap-2 py-2.5">
                 <Avatar name={e.name} size={28} />
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{e.isMe ? "You" : e.name}</span><span className="mono block text-xs text-muted">{usd(e.stakeUsd)} in · {usd(payout)} out</span></span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{e.isMe ? "You" : e.name}</span><span className="mono block whitespace-nowrap text-xs text-muted">{usd(e.stakeUsd)} in · {usd(payout)} out</span></span>
                 <StatePill state={state} />
               </li>
             ))}
           </ul>
-          <section className="flex w-[132px] flex-col rounded-[24px] bg-ink p-4 text-white" aria-label="Forfeited money">
+          <section className="flex w-full flex-col rounded-[24px] bg-ink p-4 text-white" aria-label="Forfeited money">
             <span className="text-xs text-[#C9CCC4]">Forfeited</span>
             <span className="num text-[28px] leading-tight">{usd(o.forfeited)}</span>
             {o.refundAll ? <span className="mt-auto text-xs text-[#C9CCC4]">Everyone gets their stake back. No fee.</span> : (

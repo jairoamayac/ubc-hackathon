@@ -4,13 +4,13 @@ import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction,
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Buffer } from "buffer";
 
-export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
+export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1");
 /** Pyth SOL/USD PriceUpdateV2 account (sponsored feed, Solana devnet). */
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
 /** Priority fee so transactions land when devnet is busy (paid by the sponsor). */
-export const priorityIxs = () => [
-  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }),
+export const priorityIxs = (units = 120_000) => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units }),
   ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
 ];
 
@@ -84,6 +84,8 @@ export interface ConfigArgs {
 }
 export interface ConfigAccount extends ConfigArgs { admin: PublicKey; mint: PublicKey; priceFeed: PublicKey }
 export interface CrewAccount {
+  /** Dollars this pot has supplied to Kamino Lend and not yet redeemed (part of its assets). */
+  kaminoPrincipal: bigint;
   address: PublicKey; creator: PublicKey; crewId: bigint; name: string; emoji: string;
   totalShares: bigint; totalPrincipal: bigint; yieldPaid: bigint; members: number; createdAt: number; lastAccrual: number;
 }
@@ -110,6 +112,7 @@ export function decodeCrew(address: PublicKey, d: Uint8Array): CrewAccount {
   return {
     address, creator: r.pk(), crewId: r.u64(), name: r.str(), emoji: r.str(), totalShares: r.u64(), totalPrincipal: r.u64(),
     yieldPaid: r.u64(), members: r.u32(), createdAt: Number(r.i64()), lastAccrual: Number(r.i64()),
+    ...(() => { r.u8(); r.u8(); return { kaminoPrincipal: r.u64() }; })(),
   };
 }
 export function decodeMember(address: PublicKey, d: Uint8Array): MemberAccount {

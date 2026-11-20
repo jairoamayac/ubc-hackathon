@@ -48,6 +48,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+@layer components {
 .card {
   background: #fff;
   border-radius: 24px;
@@ -297,4 +298,6 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .lock-pop { animation: none; }
+}
+
 }
