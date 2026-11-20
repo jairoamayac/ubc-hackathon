@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
-import { Icon3D, type IconName } from "./demo/parts";
+import { Icon3D, LogoMark, type IconName } from "./demo/parts";
 
 const SLIDE_ICONS: IconName[] = ["padlock-key", "friends", "shield-check", "coins-stack"];
 
@@ -23,7 +23,10 @@ const slides = [
   },
 ];
 
-export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
+/** When set, the last step signs in with Google or email instead of asking for a first name. */
+export interface SignInOptions { onGoogle: () => void; onEmail: () => void; error?: string }
+
+export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void; signIn?: SignInOptions }) {
   const [i, setI] = useState(0);
   const [name, setName] = useState("");
   const last = i === slides.length;
@@ -43,8 +46,8 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
 
       {!last ? (
         <div key={i} className="enter flex flex-1 flex-col justify-center gap-6">
-          <p className="flex items-center gap-2 text-base font-medium">
-            <span className="dot" aria-hidden /> {PROJECT_NAME}
+          <p className="flex items-center gap-2 text-base font-semibold">
+            <LogoMark size={28} /> {PROJECT_NAME}
           </p>
           <div className="relative flex h-44 items-center justify-center rounded-[24px] bg-lilac" aria-hidden>
             <Icon3D name={SLIDE_ICONS[i % SLIDE_ICONS.length]} size={160} className="float" />
@@ -52,6 +55,18 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
           <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">{slides[i].title}</h1>
           <p className="text-lg leading-relaxed text-muted">{slides[i].body}</p>
           {i === 0 && <p className="text-sm text-muted">{TAGLINE}</p>}
+        </div>
+      ) : signIn ? (
+        <div className="enter flex flex-1 flex-col justify-center gap-5">
+          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">Sign in to start</h1>
+          <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+          <button type="button" onClick={signIn.onGoogle} className="btn btn-primary w-full py-4 text-lg">
+            Continue with Google
+          </button>
+          <button type="button" onClick={signIn.onEmail} className="btn btn-quiet w-full py-4 text-lg">
+            Continue with email
+          </button>
+          {signIn.error && <p role="alert" className="text-sm text-danger">{signIn.error}</p>}
         </div>
       ) : (
         <form

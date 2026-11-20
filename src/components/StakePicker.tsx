@@ -5,7 +5,7 @@
 import { Minus, Plus, Sparkles } from "lucide-react";
 import { STAKE_WARN_MULTIPLE } from "@/lib/brand";
 import { stakeAdvice } from "@/lib/coach";
-import { usd } from "./ui";
+import { usd } from "@/lib/format";
 
 export function StakePicker({ value, onChange, min, max, suggested, label = "How much would it hurt to lose?" }: {
   value: number;

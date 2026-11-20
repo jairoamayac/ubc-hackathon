@@ -1,4 +1,4 @@
-// Attacks the live edge API: it must sign only House Money transactions where the sponsor just pays.
+// Attacks the live edge API: it must sign only Kept transactions where the sponsor just pays.
 //   API=https://house-money-ubc.jairoamayac.workers.dev node scripts/worker-security.mts
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";

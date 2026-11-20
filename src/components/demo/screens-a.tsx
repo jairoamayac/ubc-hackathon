@@ -7,7 +7,7 @@ import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_
 import { coachGoal, type Coaching } from "@/lib/coach";
 import { GROUP_NAME, onTheLine, pot, type Action, type DemoState } from "@/lib/demo/store";
 import { StakePicker } from "../StakePicker";
-import { usd } from "../ui";
+import { usd } from "@/lib/format";
 import { Avatar, DemoBadge, Icon3D, LockAnimation, LockedPill, PASTEL, ScreenBody, StatusChip, TopBar, UrgencyBanner, Wordmark, timeLeft } from "./parts";
 
 export type Route = "login" | "home" | "new" | "group" | "goal" | "feed" | "vote" | "dispute" | "results" | "me";

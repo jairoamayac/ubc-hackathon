@@ -8,7 +8,7 @@ import { FEE_PERCENT, KEEPERS_PERCENT, LEAVE_EARLY_LOSS_PERCENT, PROJECT_NAME } 
 import {
   CONFIRMS_NEEDED, FRIENDS, GROUP_NAME, NAMES, onTheLine, pot, results,
 } from "@/lib/demo/store";
-import { usd } from "../ui";
+import { usd } from "@/lib/format";
 import { GroupTabs, type ScreenProps } from "./screens-a";
 import {
   Avatar, Check3, ChatBubble, DemoBadge, GrokAvatar, Icon3D, LockedPill, ProgressRing, ProofImage, ScreenBody, Sheet,

@@ -9,8 +9,10 @@ import { memberPda } from "@/lib/house-money/solana/hm";
 import { LiveClient, friendlyError, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
+import { LogoMark } from "./demo/parts";
 import { Onboarding } from "./Onboarding";
-import { usd } from "./ui";
+import { useAuth } from "./auth/AuthContext";
+import { usd } from "@/lib/format";
 
 type View = { id: "home" } | { id: "me" } | { id: "new" } | { id: "group"; key: string };
 type Sheet = null | { id: "applepay"; then?: CrewView } | { id: "deposit"; crew: CrewView } | { id: "withdraw"; crew: CrewView };
@@ -25,6 +27,7 @@ const GROUP_WAIT_MS = 8_000;
 const LOAD_NOTICE_MS = 7_000;
 
 export default function CrewsApp() {
+  const auth = useAuth();
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
   const [client, setClient] = useState<LiveClient | null>(null);
   const [rawSnap, setSnap] = useState<Snapshot | null>(null);
@@ -66,7 +69,7 @@ export default function CrewsApp() {
   useEffect(() => {
     let stop = false;
     const connect = (attempt: number) => {
-      LiveClient.connect().then((c) => !stop && setClient(c)).catch((e) => {
+      LiveClient.connect(auth.signer).then((c) => !stop && setClient(c)).catch((e) => {
         if (stop) return;
         if (attempt < 4) setTimeout(() => connect(attempt + 1), 1500 * 2 ** attempt);
         else {
@@ -89,7 +92,7 @@ export default function CrewsApp() {
     return () => {
       stop = true;
     };
-  }, []);
+  }, [auth.signer]);
 
   // Names are stored onchain (sponsored) so friends see "Leo", never an address.
   useEffect(() => {
@@ -316,7 +319,9 @@ export default function CrewsApp() {
             <p>When someone walks away, {KEEPERS_PERCENT}% of their money goes to the friends who kept their word and {FEE_PERCENT}% to {PROJECT_NAME}. Nothing goes anywhere else.</p>
             <p className="pt-1 text-xs">Demo with test dollars. Apple Pay is simulated; no card is charged.</p>
           </section>
-          <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>
+          {auth.kind === "privy"
+            ? <button onClick={() => void auth.signOut?.()} className="btn btn-quiet">Sign out</button>
+            : <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>}
         </Page>
       ) : view.id === "new" ? (
         <NewGroup
@@ -456,7 +461,7 @@ function Page({ children }: { children: ReactNode }) {
 function Top({ name }: { name: string }) {
   return (
     <header className="flex items-center justify-between">
-      <span className="flex items-center gap-2 text-lg font-medium"><span className="dot" aria-hidden /> {PROJECT_NAME}</span>
+      <span className="flex items-center gap-2 text-lg font-semibold"><LogoMark size={28} /> {PROJECT_NAME}</span>
       <span className="text-sm text-muted">Hi, {name}</span>
     </header>
   );

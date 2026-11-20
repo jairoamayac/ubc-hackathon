@@ -12,11 +12,12 @@ import * as hm from "@/lib/house-money/solana/hm";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE } from "@/lib/brand";
 import { coachGoal } from "@/lib/coach";
 import { AppealSheet } from "./AppealSheet";
+import { VerifySheet } from "./VerifySheet";
 import { StakePicker } from "./StakePicker";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
-import { usd } from "./ui";
+import { usd } from "@/lib/format";
 
-type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView };
+type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView } | { id: "verify"; pact: ChallengeView };
 
 const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
 const DETAIL_POLL_MS = 30_000;
@@ -216,6 +217,7 @@ export function CrewRoom(props: {
                   if (ok) setDone((d) => ({ ...d, voted: [...d.voted, `${c.challenge.address.toBase58()}:${owner.toBase58()}`] }));
                 }}
                 onAppeal={() => setSheet({ id: "appeal", pact: c })}
+                onVerify={() => setSheet({ id: "verify", pact: c })}
                 onCollect={async () => {
                   const won = c.mine && c.mine.payoutUsd > c.mine.usd;
                   const ok = await run("collect", () => client.claimChallenge(crew.address, c.challenge.address, c.feeTaken),
@@ -230,7 +232,7 @@ export function CrewRoom(props: {
 
       {sheet && (
         <Dialog
-          title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : "Disagree with a result"}
+          title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : sheet.id === "verify" ? "Verify with Grok" : "Disagree with a result"}
           onClose={() => setSheet(null)}
         >
           {sheet.id === "start" && crew.members < 2 && (
@@ -263,6 +265,7 @@ export function CrewRoom(props: {
               }} />
           )}
           {sheet.id === "appeal" && <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)} />}
+          {sheet.id === "verify" && <VerifySheet pact={sheet.pact} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
     </div>
@@ -297,9 +300,9 @@ function left(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")} left`;
 }
 
-function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onCollect }: {
+function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onVerify, onCollect }: {
   c: ChallengeView; now: number; isMember: boolean; busy: string | null;
-  onJoin: () => void; onConfirm: (owner: PublicKey, kept: boolean) => void; onAppeal: () => void; onCollect: () => void;
+  onJoin: () => void; onConfirm: (owner: PublicKey, kept: boolean) => void; onAppeal: () => void; onVerify: () => void; onCollect: () => void;
 }) {
   const ch = c.challenge;
   const open = now < ch.endsAt;
@@ -372,6 +375,8 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
 
       {open && isMember && !amIn && joining && <p role="status" className="flex items-center justify-center gap-2 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Locking your money</p>}
       {open && isMember && !amIn && !joining && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
+
+      {!settled && amIn && <button onClick={onVerify} className="min-h-11 w-full text-sm text-muted underline">Public goal, like X followers? Verify with Grok</button>}
 
       {settled && <ResultBreakdown c={c} lostCount={lost.length} keptCount={kept.length} />}
 

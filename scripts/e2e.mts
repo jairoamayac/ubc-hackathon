@@ -40,7 +40,7 @@ const bal = async (a: PublicKey) => (await getAccount(conn, a)).amount;
 async function crew(addr: PublicKey) { return hm.decodeCrew(addr, (await conn.getAccountInfo(addr))!.data); }
 async function member(addr: PublicKey) { return hm.decodeMember(addr, (await conn.getAccountInfo(addr))!.data); }
 
-console.log(`House Money e2e on ${cluster} (${RPC})`);
+console.log(`Kept e2e (pots and shares) on ${cluster} (${RPC})`);
 console.log(`  program ${hm.PROGRAM_ID.toBase58()}  sponsor ${sponsor.publicKey.toBase58()}`);
 
 // 1. Test dollar (hmUSD) and sponsor reserve
