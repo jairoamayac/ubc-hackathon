@@ -845,7 +845,7 @@ pub enum HmError {
     NotDecided,
     #[msg("Voting for this commitment has closed")]
     VotingClosed,
-    #[msg("Only the operator can move a pot's money to or from Kamino")]
+    #[msg("Only the operator can move a pot's money into Kamino")]
     NotOperator,
     #[msg("The Kamino reserve is already set")]
     KaminoReserveSet,
@@ -855,6 +855,8 @@ pub enum HmError {
     NotAParticipant,
     #[msg("Stake below this commitment's minimum.")]
     StakeTooLow,
+    #[msg("Bring the pot back from Kamino first (kamino_redeem in the same transaction)")]
+    KaminoNotRedeemed,
 }
 
 #[cfg(test)]

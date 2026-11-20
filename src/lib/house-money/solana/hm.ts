@@ -444,11 +444,22 @@ function kaminoMoveKeys(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: K
     m(TOKEN_PROGRAM_ID), m(TOKEN_PROGRAM_ID), m(ASSOCIATED_TOKEN_PROGRAM), m(SystemProgram.programId), m(SYSVAR_INSTRUCTIONS),
     m(KLEND_PROGRAM_ID)];
 }
+/** `amount` 0 supplies the whole vault. Operator only. */
 export function kaminoSupplyIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve, amount: bigint) {
   return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_supply).u64(amount).done());
 }
+/** Permissionless: any signer can bring a pot back from Kamino into its own vault. */
 export function kaminoRedeemIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve) {
   return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_redeem).done());
+}
+/**
+ * Wraps instructions that price a pot's shares (deposit, withdraw, joining a goal, the fee): the program
+ * refuses to price while money sits in Kamino, so the pot comes back first (principal plus interest, so the
+ * price is exact), the action runs, and then the whole vault goes back to work. Redeem and supply are no-ops
+ * when there is nothing to move. Supply must be signed by the operator (config admin).
+ */
+export function withKamino(operator: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve, action: TransactionInstruction[]) {
+  return [refreshReserveIx(k), kaminoRedeemIx(operator, mint, crew, k), ...action, refreshReserveIx(k), kaminoSupplyIx(operator, mint, crew, k, 0n)];
 }
 /** Kamino fields that follow `vault_bump` in a Crew account (Borsh: right after the variable-length strings). */
 export function decodeCrewKamino(d: Uint8Array) {

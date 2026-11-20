@@ -5,9 +5,16 @@
 //! can redeem them. Interest is paid by Kamino borrowers and shows up as a higher cToken
 //! exchange rate; it lands in the crew vault when the cTokens are redeemed.
 //!
-//! Accounting: a crew's assets = vault balance + `kamino_principal` (dollars supplied and not
-//! yet redeemed, at cost). Yield is recognised on `kamino_redeem`, when it arrives in the vault.
-//! Kamino requires `refresh_reserve` earlier in the same transaction; the client adds it.
+//! Accounting: shares are only ever priced while the whole pot sits in the vault. Any instruction
+//! that prices shares (deposit, withdraw, joining a goal, the fee) fails with `KaminoNotRedeemed`
+//! while the crew holds cTokens, so the client wraps it: refresh + `kamino_redeem` first (principal
+//! plus interest land in the vault, so the price is exact and nobody skims accrued interest), then
+//! refresh + `kamino_supply(0)` to put the whole vault back to work. Kamino requires
+//! `refresh_reserve` before each supply/redeem in the same transaction; the client adds it.
+//!
+//! `kamino_redeem` is permissionless (it only moves the crew's own cTokens back into the crew's own
+//! vault), so people can always get their money out even if the operator is gone.
+//! `kamino_supply` is operator-only.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{instruction::{AccountMeta, Instruction}, program::invoke_signed};
@@ -21,8 +28,10 @@ pub const KLEND_PROGRAM_ID: Pubkey = pubkey!("KLend2g3cP87fffoy8q1mQqGKjrxjC8boS
 const IX_DEPOSIT_RESERVE_LIQUIDITY: [u8; 8] = [169, 201, 30, 126, 6, 205, 102, 68];
 const IX_REDEEM_RESERVE_COLLATERAL: [u8; 8] = [234, 117, 181, 125, 185, 142, 220, 29];
 
-/// Value the crew can price shares against: idle dollars plus dollars supplied to Kamino.
+/// Value the crew prices shares against. Only valid while nothing sits in Kamino, so that the
+/// value is exact (principal plus all interest) instead of an at-cost estimate.
 pub fn crew_assets(crew: &Crew, vault_amount: u64) -> Result<u64> {
+    require!(crew.kamino_ctokens == 0, HmError::KaminoNotRedeemed);
     vault_amount.checked_add(crew.kamino_principal).ok_or(HmError::MathOverflow.into())
 }
 
@@ -33,8 +42,23 @@ pub fn set_kamino_reserve_handler(ctx: Context<SetKaminoReserve>) -> Result<()> 
     Ok(())
 }
 
+/// Below this, "supply everything" leaves the dollars in the vault: rounding dust (a few millionths of a
+/// dollar after the last person withdraws) would mint zero cTokens and Kamino rejects it.
+pub const MIN_AUTO_SUPPLY: u64 = 10_000; // $0.01 with 6 decimals
+
+/// Supplies `amount` dollars from the vault, or the whole vault when `amount` is 0 (no-op below a cent).
 pub fn kamino_supply_handler(ctx: Context<KaminoMove>, amount: u64) -> Result<()> {
-    require!(amount > 0 && amount <= ctx.accounts.crew_vault.amount, HmError::ZeroAmount);
+    require_keys_eq!(ctx.accounts.payer.key(), ctx.accounts.config.admin, HmError::NotOperator);
+    let amount = if amount == 0 {
+        let all = ctx.accounts.crew_vault.amount;
+        if all < MIN_AUTO_SUPPLY {
+            return Ok(());
+        }
+        all
+    } else {
+        amount
+    };
+    require!(amount <= ctx.accounts.crew_vault.amount, HmError::ZeroAmount);
     let before = ctx.accounts.crew_ctoken.amount;
     let a = &ctx.accounts;
     let ix = Instruction {
@@ -66,10 +90,12 @@ pub fn kamino_supply_handler(ctx: Context<KaminoMove>, amount: u64) -> Result<()
     Ok(())
 }
 
-/// Redeems every cToken the crew holds. Principal plus Kamino interest return to the vault.
+/// Permissionless. Redeems every cToken the crew holds. Principal plus Kamino interest return to the vault.
 pub fn kamino_redeem_handler(ctx: Context<KaminoMove>) -> Result<()> {
     let ctokens = ctx.accounts.crew_ctoken.amount;
-    require!(ctokens > 0, HmError::ZeroAmount);
+    if ctokens == 0 {
+        return Ok(()); // nothing in Kamino: lets the client always prepend a redeem
+    }
     let before = ctx.accounts.crew_vault.amount;
     let a = &ctx.accounts;
     let ix = Instruction {
@@ -141,11 +167,12 @@ pub struct SetKaminoReserve<'info> {
     pub reserve: UncheckedAccount<'info>,
 }
 
-/// Operator crank (the fee sponsor, which is the config admin and co-signs every app transaction).
-/// Funds can only travel between the crew vault and cTokens owned by the crew PDA, never elsewhere.
+/// Supply is an operator crank (the fee sponsor, which is the config admin and co-signs every app
+/// transaction); redeem is open to anyone. Either way funds only travel between the crew vault and
+/// cTokens owned by the crew PDA, never elsewhere.
 #[derive(Accounts)]
 pub struct KaminoMove<'info> {
-    #[account(mut, address = config.admin @ HmError::NotOperator)]
+    #[account(mut)]
     pub payer: Signer<'info>,
     #[account(seeds = [b"config"], bump = config.bump, has_one = mint, has_one = kamino_reserve @ HmError::BadConfig)]
     pub config: Account<'info, Config>,
