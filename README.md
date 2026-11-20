@@ -60,15 +60,36 @@ Code: `programs/house_money/src` (on-chain program; the folder keeps its origina
 
 ## Run it
 
+Everything runs from a clean clone with no secrets in the repo. Keys are generated into `keys/` and
+`.dev.vars`, both git-ignored. Needs Node 20+, Rust and the Agave CLI (`solana`, `cargo build-sbf`).
+
+**1. Local, everything real (validator + the real Kamino program cloned from mainnet):**
+
 ```bash
 npm install
-cargo build-sbf --manifest-path programs/house_money/Cargo.toml     # needs the Agave CLI
-RPC_URL=http://127.0.0.1:8899 node scripts/e2e.mts                    # mint + config on solana-test-validator
-RPC_URL=http://127.0.0.1:8899 node scripts/kept-e2e.mts
-npm run build && npx wrangler deploy                                  # app + fee sponsor
+scripts/kamino-local.sh                                   # builds the program, starts a validator on :8999
+KLEND_SDK=/path/to/klend-sdk scripts/kamino-local-market.sh   # Kamino market, reserves, a real borrower
+RPC_URL=http://127.0.0.1:8999 KAMINO_FILE=kamino-local.json NEED_INTEREST=0 npx jiti scripts/kamino-e2e.mts
+npm run build && scripts/worker-local.sh                   # app + API on http://localhost:8788
+APP_URL=http://localhost:8788 npx jiti scripts/app-e2e.mts # three friends, a whole pact, through the app
+API=http://localhost:8788 npx jiti scripts/worker-security.mts
 ```
 
-Keys live in `keys/` (git-ignored). The Worker needs `SPONSOR_KEY` as a secret: `npx wrangler secret put SPONSOR_KEY`.
+`klend-sdk` is [Kamino-Finance/klend-sdk](https://github.com/Kamino-Finance/klend-sdk), cloned with its dependencies installed.
+
+**2. Devnet:** the program is deployed at the address in `programs/house_money/src/lib.rs`. Its config,
+mint and Kamino market are run by the team's sponsor key, so to operate your own copy deploy the program
+under your own ID (`declare_id!` + `HM_PROGRAM_ID`) and run `scripts/e2e.mts` to create mint and config.
+
+**Configuration** (see [`.dev.vars.example`](.dev.vars.example)):
+
+| Name | Where | What |
+|---|---|---|
+| `SPONSOR_KEY` | Worker secret / `.dev.vars` | sponsor keypair that pays fees |
+| `QUICKNODE_URL` | Worker secret / `.dev.vars` | optional private RPC, see [docs/quicknode.md](docs/quicknode.md) |
+| `RPC_URL`, `MINT`, `KAMINO_*` | `wrangler.jsonc` vars | cluster, test dollar, Kamino market (public values) |
+
+Deploy: `npm run build && npx wrangler deploy`, after `npx wrangler secret put SPONSOR_KEY` (and `QUICKNODE_URL`).
 
 ## Honest limits
 
