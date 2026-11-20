@@ -29,10 +29,18 @@ export function Icon3D({ name, size = 64, className = "", label }: { name: IconN
   );
 }
 
-export function Wordmark({ className = "" }: { className?: string }) {
+/** The Kept app icon (pinky promise on celeste, docs/brand/kept-lila/logo-pinky). */
+export function LogoMark({ size = 32 }: { size?: number }) {
   return (
-    <span className={`flex items-center gap-2 text-xl font-medium tracking-tight ${className}`}>
-      <span className="dot" aria-hidden /> Kept
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src="/kept/logo/kept-icon-180.png" width={size} height={size} alt="" aria-hidden draggable={false} className="shrink-0 select-none" style={{ width: size, height: size }} />
+  );
+}
+
+export function Wordmark({ className = "", size = 32 }: { className?: string; size?: number }) {
+  return (
+    <span className={`flex items-center gap-2 text-xl font-semibold tracking-tight ${className}`}>
+      <LogoMark size={size} /> Kept
     </span>
   );
 }

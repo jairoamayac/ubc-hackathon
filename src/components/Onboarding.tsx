@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
-import { Icon3D, type IconName } from "./demo/parts";
+import { Icon3D, LogoMark, type IconName } from "./demo/parts";
 
 const SLIDE_ICONS: IconName[] = ["padlock-key", "friends", "shield-check", "coins-stack"];
 
@@ -43,8 +43,8 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
 
       {!last ? (
         <div key={i} className="enter flex flex-1 flex-col justify-center gap-6">
-          <p className="flex items-center gap-2 text-base font-medium">
-            <span className="dot" aria-hidden /> {PROJECT_NAME}
+          <p className="flex items-center gap-2 text-base font-semibold">
+            <LogoMark size={28} /> {PROJECT_NAME}
           </p>
           <div className="relative flex h-44 items-center justify-center rounded-[24px] bg-lilac" aria-hidden>
             <Icon3D name={SLIDE_ICONS[i % SLIDE_ICONS.length]} size={160} className="float" />

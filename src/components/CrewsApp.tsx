@@ -8,6 +8,7 @@ import { PublicKey } from "@solana/web3.js";
 import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
+import { LogoMark } from "./demo/parts";
 import { Onboarding } from "./Onboarding";
 import { usd } from "@/lib/format";
 
@@ -312,7 +313,7 @@ function Page({ children }: { children: ReactNode }) {
 function Top({ name }: { name: string }) {
   return (
     <header className="flex items-center justify-between">
-      <span className="flex items-center gap-2 text-lg font-medium"><span className="dot" aria-hidden /> {PROJECT_NAME}</span>
+      <span className="flex items-center gap-2 text-lg font-semibold"><LogoMark size={28} /> {PROJECT_NAME}</span>
       <span className="text-sm text-muted">Hi, {name}</span>
     </header>
   );
