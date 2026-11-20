@@ -1,6 +1,6 @@
 // Seeds a demo group of friends with a live pact, and prints the invite link.
 // Their keys are kept in keys/demo-<cluster>.json so scripts/demo-act.mts can make them vote later.
-//   RPC_URL=... APP_URL=https://house-money-ubc.jairoamayac.workers.dev MINUTES=10 node scripts/demo-seed.mts
+//   RPC_URL=... APP_URL=https://kept.jairoamayac.workers.dev MINUTES=10 node scripts/demo-seed.mts
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import fs from "node:fs";

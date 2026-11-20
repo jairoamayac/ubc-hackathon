@@ -1,0 +1,7 @@
+{
+  // Redirect-only Worker on the old name. Deploy: npx wrangler deploy -c worker/redirect/wrangler.jsonc
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "house-money-ubc",
+  "main": "index.ts",
+  "compatibility_date": "2026-11-17"
+}

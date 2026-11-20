@@ -10,8 +10,8 @@ held by a Solana program, not by us and not by your friends.
 
 Built at UBC Hackathon 2026 (Consumer Applications, Best use of Solana).
 
-- **Live app:** https://house-money-ubc.jairoamayac.workers.dev (Get started = your account; Try the demo = the
-  75-second walkthrough)
+- **Live app:** https://kept.jairoamayac.workers.dev (Get started = your account; Try the demo = the
+  75-second walkthrough). The first address, `house-money-ubc.jairoamayac.workers.dev`, redirects here.
 - **Devnet proof:** [every escrow, pact and payout with explorer links](docs/devnet-proof.md)
 - **What works today:** [integrations status](docs/integrations.md) · **Audit:** [findings and fixes](docs/audit-2026-11-20.md)
 
@@ -135,7 +135,7 @@ Deploy: `npm run build && npx wrangler deploy`.
 | `programs/house_money/src` | On-chain program (the folder keeps its first name: the program ID depends on it) |
 | `src/lib/house-money/solana` | Client: instruction builders, `LiveClient`, polite RPC fetch, Privy signer |
 | `src/components` | Live app (v5 screens), `/demo`, sign-in, Grok sheets |
-| `worker/` | Cloudflare Worker: sponsor, RPC proxy, Grok council, QuickNode Stream |
+| `worker/` | Cloudflare Worker `kept`: sponsor, RPC proxy, Grok council, QuickNode Stream; `worker/redirect` keeps the old address forwarding |
 | `scripts/` | End-to-end tests, local Kamino setup, demo seeding |
 | `docs/` | [Index](docs/README.md): context, product rules, architecture, decisions, integrations, audit, setup guides |
 | `design/`, `docs/brand/` | v5 mockups and the "Lila y mandarina" brand kit |

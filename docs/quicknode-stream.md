@@ -6,8 +6,8 @@ a QuickNode Stream (Solana **devnet**) filters for that line → POSTs to our Wo
 signature, stores the dispute in KV (`DISPUTES`), and makes sure a Grok council case exists (links to the app's
 appeal, or starts the judge itself). The app and the demo can read it back with `GET /api/disputes?challenge=<pact>`.
 
-Worker URL (does not change): `https://house-money-ubc.jairoamayac.workers.dev`
-**Destination webhook:** `https://house-money-ubc.jairoamayac.workers.dev/api/streams/quicknode`
+Worker URL (does not change): `https://kept.jairoamayac.workers.dev`
+**Destination webhook:** `https://kept.jairoamayac.workers.dev/api/streams/quicknode`
 
 ## 0. Order of operations (important)
 
@@ -49,7 +49,7 @@ solana program deploy --buffer BUFFER --program-id 7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o
 | Batch size / distance from tip | defaults (1 / 0) |
 | Filter | **Modify the stream payload**, language **JavaScript**, paste the whole file `scripts/quicknode-filter.js` (below) |
 | Destination | **Webhook** |
-| URL | `https://house-money-ubc.jairoamayac.workers.dev/api/streams/quicknode` |
+| URL | `https://kept.jairoamayac.workers.dev/api/streams/quicknode` |
 | Payload compression | **None** (the Worker also accepts gzip, but None is the safest for the demo) |
 | Timeout / retry | defaults (30 s / retry every 1 s / pause after 3 failures) |
 | Custom headers | none needed |
@@ -139,12 +139,12 @@ a log line without our program's invoke frame is ignored; `GET /api/disputes?cha
 
 ### B. On devnet, after the program upgrade and with the Stream running
 
-1. Tail the Worker: `npx wrangler tail house-money-ubc --format pretty` (look for `POST /api/streams/quicknode 200`).
+1. Tail the Worker: `npx wrangler tail kept --format pretty` (look for `POST /api/streams/quicknode 200`).
 2. In the app (devnet), finish a pact, and with a participant press **Disagree with this result** → **Send to the Grok council**. That sends the case, then calls `open_dispute` (sponsored by the Worker).
    Or from a script: `RPC_URL=https://api.devnet.solana.com node scripts/dispute-e2e.mts` (needs `keys/sponsor.json` funded and `keys/devnet.json`; creates a test crew/pact and opens disputes).
 3. Check the transaction on the explorer: logs contain `Program log: KEPT:DisputeOpened …`.
 4. Within a few seconds QuickNode's Stream dashboard shows a delivery; the Worker answers `{"ok":true,"matched":1,"stored":1}`.
-5. Read it back: `curl 'https://house-money-ubc.jairoamayac.workers.dev/api/disputes?challenge=<PACT_ADDRESS>'` → `council: "linked"` (came from the app's appeal) or `"started"` (opened without the app).
+5. Read it back: `curl 'https://kept.jairoamayac.workers.dev/api/disputes?challenge=<PACT_ADDRESS>'` → `council: "linked"` (came from the app's appeal) or `"started"` (opened without the app).
 6. `GET /api/disputes/<dispute_id>` shows `onchain: { signature, slot, blockTime, reason }` next to the council verdict.
 
 If nothing arrives: Stream dashboard → Logs (filter output), confirm network = devnet and dataset, confirm the token matches the secret (401 in `wrangler tail` means mismatch).

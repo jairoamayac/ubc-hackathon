@@ -2,7 +2,7 @@
 
 ## For judges (2 minutes, on your phone)
 
-Open https://house-money-ubc.jairoamayac.workers.dev. One welcome, two ways in:
+Open https://kept.jairoamayac.workers.dev. One welcome, two ways in:
 
 - **Try the demo**: the whole story in 75 seconds, offline (five friends, a disputed proof, the Grok council, the payout). Press **D** or **Demo controls > Play all**.
 - **Get started**: your real account, by email (Privy).
@@ -34,7 +34,7 @@ Likely questions:
 
 ```bash
 # friends Leo, Maya and Josh with a live commitment; prints the invite link
-CREW="Saturday Squad" MINUTES=10 APP_URL=https://house-money-ubc.jairoamayac.workers.dev \
+CREW="Saturday Squad" MINUTES=10 APP_URL=https://kept.jairoamayac.workers.dev \
   RPC_URL=https://api.devnet.solana.com node scripts/demo-seed.mts
 
 # after the deadline: friends verify (FAIL=<names> didn't do it) and collect

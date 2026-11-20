@@ -26,7 +26,7 @@ every action: app builds tx (fee payer = sponsor)
 2. **Login methods** (Authentication): turn on **Email** (one-time code) and turn **Google** (and every other social login) off. The app only offers email (`loginMethods: ["email"]`).
 3. **Wallets / Embedded wallets**: turn on embedded wallets for **Solana**. (The app also asks Privy to create the account automatically at first sign-in and hides Privy's confirmation pop-ups.)
 4. **Configuration > App settings > Domains > Allowed origins**: add
-   - `https://house-money-ubc.jairoamayac.workers.dev` (production demo; add any other production URL or custom domain too)
+   - `https://kept.jairoamayac.workers.dev` (production demo; add any other production URL or custom domain too)
    - `http://localhost:3000` (for `npm run dev`; the port is required)
    
    Protocol `https` is required, no trailing paths. Sign-in will not start from a site that isn't listed here.
@@ -36,7 +36,7 @@ every action: app builds tx (fee payer = sponsor)
 
 **Already done:** `.env.production` (committed; the App ID is public) holds `NEXT_PUBLIC_PRIVY_APP_ID=cmwp0pqgn03et0gld17mispk3`, and `next build` reads it automatically, so `npm run build && npx wrangler deploy` is enough. To use a different app, override it in the shell as below or edit that file.
 
-The site is a Next.js **static export** (`output: "export"`) served by the Cloudflare Worker `house-money-ubc`. `NEXT_PUBLIC_*` variables are baked into the JavaScript **when `npm run build` runs**, so they must exist in the environment of the build, not in the Worker:
+The site is a Next.js **static export** (`output: "export"`) served by the Cloudflare Worker `kept`. `NEXT_PUBLIC_*` variables are baked into the JavaScript **when `npm run build` runs**, so they must exist in the environment of the build, not in the Worker:
 
 ```bash
 # whoever deploys (the one logged in to wrangler):

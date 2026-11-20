@@ -1,6 +1,6 @@
 # Integrations: what works, what doesn't, what's missing
 
-Checked against the live app (`house-money-ubc.jairoamayac.workers.dev`) and devnet on 20 Nov 2026.
+Checked against the live app (`kept.jairoamayac.workers.dev`) and devnet on 20 Nov 2026.
 
 | Integration | What it does in Kept | Status | What's missing |
 |---|---|---|---|
