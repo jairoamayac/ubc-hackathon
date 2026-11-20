@@ -9,7 +9,9 @@ import * as hm from "./hm";
 import { createRpcFetch } from "./rpc-fetch";
 import { keypairSigner, type OwnerSigner } from "./signer";
 
-export interface AppConfig { rpc: string; fallbackRpc?: string | null; mint: string; sponsor: string; programId: string; kamino?: { market: string; reserve: string; pythOracle: string } | null }
+export interface AppConfig { rpc: string; fallbackRpc?: string | null; mint: string; sponsor: string; programId: string; kamino?: { market: string; reserve: string; pythOracle: string } | null;
+  /** True when the Worker has a Crossmint server key: Add funds can take Apple Pay or a card for real (test mode). */
+  onramp?: boolean }
 
 export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
@@ -167,8 +169,11 @@ export class LiveClient {
   private readonly privateRpc: boolean;
   private fee = { price: hm.BASE_CU_PRICE, at: 0 };
 
+  /** The Worker can take card and Apple Pay payments (Crossmint). */
+  readonly onrampReady: boolean;
   private constructor(cfg: AppConfig, owner: OwnerSigner) {
     this.rpcUrl = cfg.rpc;
+    this.onrampReady = !!cfg.onramp;
     this.privateRpc = !!cfg.fallbackRpc;
     this.owner = owner;
     // Polite RPC: throttled, de-duplicated, shared 429 backoff (rpc-fetch.ts), on top of the private RPC
@@ -301,6 +306,35 @@ export class LiveClient {
       return await this.submit(tx, lastValidBlockHeight);
     } catch (e) {
       throw new Error(friendlyError(e));
+    }
+  }
+
+  /** Starts a Crossmint payment (Apple Pay or a card) for `usd` dollars, paid out to this account. */
+  onrampOrder(email: string, usd: number) {
+    return api<{ orderId: string; clientSecret: string }>("/api/onramp/order", { owner: this.owner.publicKey.toBase58(), email, amount: usd });
+  }
+
+  /**
+   * After Crossmint finishes, adds the same amount of test dollars to the balance. Waits while the payment is still
+   * processing (the Worker answers 409), at most ~`tries` x 4 s. Safe to call twice: one credit per payment.
+   */
+  async creditOnramp(orderId: string, tries = 20) {
+    for (let i = 0; ; i++) {
+      const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
+      const res = await fetch("/api/onramp/credit", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orderId, blockhash, owner: this.owner.publicKey.toBase58() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { tx?: string; credited?: boolean; usd?: number; error?: string; pending?: boolean };
+      if (res.status === 409 && data.pending && i < tries) {
+        await new Promise((r) => setTimeout(r, 4_000));
+        continue;
+      }
+      if (!res.ok || data.error) throw new Error(data.error ?? `Request failed (${res.status})`);
+      if (data.credited) return data.usd ?? 0;
+      if (!data.tx) throw new Error("The server sent an unexpected answer.");
+      await this.submit(data.tx, lastValidBlockHeight);
+      return data.usd ?? 0;
     }
   }
 

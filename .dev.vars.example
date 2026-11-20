@@ -8,3 +8,6 @@ SPONSOR_KEY=[1,2,3,...]
 
 # Optional private RPC (docs/quicknode.md). Empty = public RPC_URL from wrangler.jsonc.
 QUICKNODE_URL=https://<name>.solana-devnet.quiknode.pro/<token>/
+
+# Optional: Crossmint server key (staging) for Add funds with Apple Pay or a card (docs/ONRAMP.md).
+CROSSMINT_SERVER_KEY=sk_staging_...

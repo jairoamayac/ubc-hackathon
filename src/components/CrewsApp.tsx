@@ -1,7 +1,8 @@
 "use client";
 
 // Kept v5, wired to the live program. Tabs: Home (balance, goals, groups), Group (members and feed), Me.
-// Pushed screens: goal detail, new goal wizard, vote, results. Sheets: add funds (simulated Apple Pay),
+// Pushed screens: goal detail, new goal wizard, vote, results. Sheets: add funds (Crossmint Apple Pay or card when
+// configured, see docs/ONRAMP.md; otherwise simulated Apple Pay),
 // withdraw, appeal (preview). Design: docs/brand/kept-lila and design/kept-v5.
 import { ArrowRight, ChevronRight, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -11,10 +12,13 @@ import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { usd } from "@/lib/format";
 import { ENTRY } from "@/lib/house-money/solana/hm";
 import { Onboarding } from "./Onboarding";
-import { useAuth } from "./auth/AuthContext";
+import { CROSSMINT_CLIENT_KEY, useAuth } from "./auth/AuthContext";
 import { GroupScreen, GoalScreen, ResultsScreen, VoteScreen } from "./CrewRoom";
 import { NewGoal } from "./kept/NewGoal";
 import { AppealSheet } from "./AppealSheet";
+import dynamic from "next/dynamic";
+// Loaded only when card payments are on, so the default build ships none of the checkout code.
+const AddFundsCrossmint = dynamic(() => import("./AddFundsCrossmint").then((m) => m.AddFundsCrossmint), { ssr: false, loading: () => <Spinner label="Loading" /> });
 import { VerifySheet } from "./VerifySheet";
 import { myGoals, percentElapsed, roundTitle, type MyGoal } from "./kept/model";
 import { Avatar, BottomNav, Dialog, Empty, ErrorNote, Header, Icon3D, LockedPill, Page, Shell, Spinner, StatePill, timeLeft, Wordmark, type Tab } from "./kept/ui";
@@ -377,7 +381,15 @@ export default function CrewsApp() {
 
       {sheet && snap && (
         <Dialog title={sheet.id === "addFunds" ? "Add funds" : sheet.id === "withdraw" ? "Withdraw" : sheet.id === "verify" ? "Verify with Grok" : "Appeal"} onClose={() => setSheet(null)}>
-          {sheet.id === "addFunds" && (
+          {sheet.id === "addFunds" && CROSSMINT_CLIENT_KEY && auth.email && client?.onrampReady && (
+            <AddFundsCrossmint client={client} email={auth.email} clientKey={CROSSMINT_CLIENT_KEY} busy={busy === "topup"}
+              onPaid={async (orderId, amt) => {
+                const ok = await act("topup", () => client.creditOnramp(orderId), `${usd(amt)} added.`);
+                if (ok) setSheet(null);
+                return ok;
+              }} />
+          )}
+          {sheet.id === "addFunds" && !(CROSSMINT_CLIENT_KEY && auth.email && client?.onrampReady) && (
             <ApplePaySheet busy={busy === "topup"} onPay={async (amt) => {
               if (await act("topup", () => client!.topUp(amt), `${usd(amt)} added.`)) setSheet(null);
             }} />

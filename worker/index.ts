@@ -3,21 +3,23 @@
 //   POST /api/topup    simulated Apple Pay: returns a sponsor-signed transfer of test dollars (hmUSD)
 //   POST /api/sponsor  vets and co-signs a transaction as fee payer, so people never hold SOL
 //   POST /api/rpc      JSON-RPC proxy to a private RPC (QuickNode), only when QUICKNODE_URL is set
+//   POST /api/onramp/order, /api/onramp/credit: Crossmint (Apple Pay or a card), see worker/onramp.ts and docs/ONRAMP.md
+//   GET  /.well-known/apple-developer-merchantid-domain-association: Apple Pay domain file (committed; CROSSMINT_APPLE_PAY_DOMAIN_FILE overrides)
 //   /api/appeal, /api/grok/verdict, /api/disputes/:id, /api/streams/quicknode: Grok Bot appeals council (worker/grok.ts)
 // The Worker only signs; the app submits to the RPC (public RPCs block datacenter IPs).
 // With QUICKNODE_URL (a Worker secret, never sent to browsers) the app talks to /api/rpc, which forwards a
 // short allowlist of read and send methods; RPC_URL stays as the public fallback the app uses if the proxy fails.
 // The sponsor key lives in a Worker secret (SPONSOR_KEY). Devnet only.
 import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
-import {
-  createAssociatedTokenAccountIdempotentInstruction,
-  createTransferCheckedInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
 import { KEPT_IX, MAX_CU_PRICE as HM_MAX_CU_PRICE, PROGRAM_ID, priorityIxs } from "../src/lib/house-money/solana/hm";
 import { handleGrok, type GrokEnv } from "./grok";
+// Apple Pay domain file from the Crossmint console (staging) for kept.jairoamayac.workers.dev, served byte for byte.
+import APPLE_PAY_DOMAIN_FILE from "./apple-developer-merchantid-domain-association.txt";
+import { handleOnramp, topupTx, type OnrampEnv, type OnrampKV } from "./onramp";
 
-interface Env extends GrokEnv {
+interface Env extends GrokEnv, OnrampEnv {
+  /** Optional override of the committed Apple Pay domain file (e.g. for another domain or production). */
+  CROSSMINT_APPLE_PAY_DOMAIN_FILE?: string;
   ASSETS: { fetch: (r: Request) => Promise<Response> };
   SPONSOR_KEY: string;
   RPC_URL: string;
@@ -110,6 +112,11 @@ const json = (body: unknown, status = 200) =>
 const worker = {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname === "/.well-known/apple-developer-merchantid-domain-association") {
+      const file = env.CROSSMINT_APPLE_PAY_DOMAIN_FILE || APPLE_PAY_DOMAIN_FILE;
+      if (!file) return new Response("Not found", { status: 404 });
+      return new Response(file, { headers: { "content-type": "text/plain", "cache-control": "public, max-age=3600" } });
+    }
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
     try {
       // Grok Bot appeals council. These routes do not need the sponsor key and never sign anything.
@@ -118,6 +125,13 @@ const worker = {
       const sponsor = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(env.SPONSOR_KEY)));
       const mint = new PublicKey(env.MINT);
 
+      const onramp = await handleOnramp(req, url, env, {
+        kv: env.DISPUTES as unknown as OnrampKV | undefined, // same namespace, keys prefixed "onramp:"
+        sponsor, signTx: (t) => t.sign(sponsor), mint, prefix: priorityIxs(), rpc: env.QUICKNODE_URL || env.RPC_URL,
+        allow: (key) => allowed(env.TOPUP_LIMIT, key), ip: ipOf(req),
+      });
+      if (onramp) return onramp;
+
       if (url.pathname === "/api/config" && req.method === "GET") {
         return json({
           rpc: env.QUICKNODE_URL ? `${url.origin}/api/rpc` : env.RPC_URL,
@@ -125,6 +139,7 @@ const worker = {
           mint: mint.toBase58(),
           sponsor: sponsor.publicKey.toBase58(),
           programId: PROGRAM_ID.toBase58(),
+          onramp: !!env.CROSSMINT_SERVER_KEY && !!env.DISPUTES,
           kamino: env.KAMINO_RESERVE && env.KAMINO_MARKET && env.KAMINO_ORACLE
             ? { market: env.KAMINO_MARKET, reserve: env.KAMINO_RESERVE, pythOracle: env.KAMINO_ORACLE }
             : null,
@@ -180,16 +195,7 @@ const worker = {
         if (!(await allowed(env.TOPUP_LIMIT, `owner:${owner}`))) return tooMany();
         const usd = Number(amount);
         if (!(usd >= 1 && usd <= MAX_TOPUP_USD)) return json({ error: `Top up between $1 and $${MAX_TOPUP_USD}.` }, 400);
-        const to = new PublicKey(owner);
-        const from = getAssociatedTokenAddressSync(mint, sponsor.publicKey);
-        const toAta = getAssociatedTokenAddressSync(mint, to);
-        const tx = new Transaction().add(
-          ...priorityIxs(),
-          createAssociatedTokenAccountIdempotentInstruction(sponsor.publicKey, toAta, to, mint),
-          createTransferCheckedInstruction(from, mint, toAta, sponsor.publicKey, BigInt(Math.round(usd * 1e6)), 6),
-        );
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = sponsor.publicKey;
+        const tx = topupTx(sponsor, mint, new PublicKey(owner), usd, blockhash, undefined, priorityIxs());
         tx.sign(sponsor);
         return json({ tx: b64(tx) });
       }

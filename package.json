@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@crossmint/client-sdk-react-ui": "^5.4.0",
     "@privy-io/react-auth": "^3.52.0",
     "@solana-program/memo": "^0.16.0",
     "@solana-program/system": "^0.16.0",
