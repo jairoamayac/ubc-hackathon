@@ -44,3 +44,13 @@ Without `QUICKNODE_URL` everything works exactly as before on the public RPC.
 - `app-e2e.mts` through `/api/rpc`: 6/6 (top-ups, group, Kamino, votes, 5% fee once, withdrawals).
 - QuickNode unreachable: the app falls back to the public RPC, tops up and creates a group.
 - In the browser every app call goes to `/api/rpc`, no console errors.
+
+## Verified on devnet with our QuickNode endpoint (2026-11-20)
+
+- Endpoint: Solana Devnet (`*.solana-devnet.quiknode.pro`), Free plan. URL only in `.dev.vars` / Worker secret.
+- `worker-security.mts` through `/api/rpc` on devnet: 22/22.
+- Real transactions through the app's LiveClient: a $5 top-up confirmed in 1.1 s, a group created in 1.3 s;
+  all 15 RPC calls went through QuickNode, none to the public RPC.
+- Priority Fee API add-on not enabled yet (`Method not found`): the app keeps the fixed fee. It is a free
+  add-on: Endpoint → Add-ons → Solana Priority Fee API.
+- QuickNode does not hand out devnet SOL (`requestAirdrop` → "RPC faucet is closed"); use faucet.solana.com.
