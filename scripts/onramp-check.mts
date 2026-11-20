@@ -4,7 +4,7 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { CROSSMINT, REISSUE_AFTER_MS, creditFor, nextStep, topupTx, type CmOrder, type CreditRecord } from "../worker/onramp.ts";
 
 let pass = 0, fail = 0;
-const ok = (name: string, cond: boolean) => { cond ? pass++ : fail++; console.log(`  ${cond ? "✓" : "✗"} ${name}`); };
+const ok = (name: string, cond: boolean) => { if (cond) pass++; else fail++; console.log(`  ${cond ? "✓" : "✗"} ${name}`); };
 
 const USDC = CROSSMINT.staging.usdc;
 const MINT = USDC.split(":")[1];
