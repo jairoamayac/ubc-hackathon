@@ -8,7 +8,7 @@ import { coachGoal, type Coaching } from "@/lib/coach";
 import { GROUP_NAME, onTheLine, pot, type Action, type DemoState } from "@/lib/demo/store";
 import { StakePicker } from "../StakePicker";
 import { usd } from "@/lib/format";
-import { Avatar, DemoBadge, Icon3D, LockAnimation, LockedPill, PASTEL, ScreenBody, StatusChip, TopBar, UrgencyBanner, Wordmark, timeLeft } from "./parts";
+import { Avatar, DemoBadge, Icon3D, KaminoEarnings, LockAnimation, LockedPill, PASTEL, ScreenBody, StatusChip, TopBar, UrgencyBanner, Wordmark, timeLeft } from "./parts";
 
 export type Route = "login" | "home" | "new" | "group" | "goal" | "feed" | "vote" | "dispute" | "results" | "me";
 export type ScreenProps = { s: DemoState; d: Dispatch<Action>; go: (r: Route) => void };
@@ -352,6 +352,7 @@ export function GroupScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
           <span>{inCount} of {s.people.length} locked in</span>
           <span className="flex -space-x-2" aria-hidden>{s.people.filter((p) => p.stake > 0).map((p) => <Avatar key={p.id} id={p.id} size={28} />)}</span>
         </div>
+        <KaminoEarnings pot={pot(s)} hoursLeft={s.hoursLeft} ended={s.stage === "ended"} />
         {pot(s) > 0 && <p className="mt-2 text-xs">Your money stays locked until the deadline.</p>}
       </section>
       <ul className="grid grid-cols-2 gap-3" aria-label="People and goals">

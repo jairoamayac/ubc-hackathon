@@ -3,7 +3,8 @@
 // Small building blocks for the offline demo: shell, nav, avatars, ring, chips, banners, proof image, vote bar,
 // verdict card, lock animation, 3D icons. Brand: "Lila y mandarina" (docs/brand/kept-lila/kept-brand.md).
 import { ArrowLeft, Check, Home, Loader2, Lock, MessageCircle, User, Users, X } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { YIELD_APY_PERCENT } from "@/lib/brand";
 import { NAMES, type PersonId, type Status } from "@/lib/demo/store";
 
 export type DemoTab = "home" | "group" | "me";
@@ -305,5 +306,31 @@ export function ChatBubble({ from, text, mine }: { from: PersonId | "grok" | "sy
         {text}
       </div>
     </div>
+  );
+}
+
+/**
+ * Interest the locked pot earns on Kamino Lend, ticking live (simulated in the demo: roadmap APY, demo clock).
+ * Each real second advances the demo clock 2 hours, on top of the hours that have passed in the story.
+ */
+export function KaminoEarnings({ pot, hoursLeft, ended, tone = "deep" }: { pot: number; hoursLeft: number; ended: boolean; tone?: "deep" | "white" }) {
+  const [since, setSince] = useState(0);
+  useEffect(() => {
+    if (pot <= 0 || ended) return;
+    const start = performance.now();
+    const t = setInterval(() => setSince((performance.now() - start) / 1000), 100);
+    return () => { clearInterval(t); setSince(0); };
+  }, [pot, ended, hoursLeft]);
+  if (pot <= 0) return null;
+  const demoSeconds = (72 - hoursLeft) * 3600 + since * 7200;
+  const earned = (pot * (YIELD_APY_PERCENT / 100) * demoSeconds) / (365 * 86400);
+  return (
+    <p className={`mt-3 flex items-center justify-between gap-2 rounded-2xl px-3 py-2 text-sm ${tone === "white" ? "bg-white/15 text-white" : "bg-white/55 text-deep"}`} aria-label={`Earning ${YIELD_APY_PERCENT}% a year on Kamino, simulated`}>
+      <span className="flex items-center gap-2">
+        <span aria-hidden className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-forest opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-forest" /></span>
+        Earning on Kamino · {YIELD_APY_PERCENT}% APY
+      </span>
+      <span className="mono tabular-nums font-medium" aria-hidden>+${earned.toFixed(4)}</span>
+    </p>
   );
 }
