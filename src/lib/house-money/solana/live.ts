@@ -6,6 +6,8 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import * as hm from "./hm";
+import { createRpcFetch } from "./rpc-fetch";
+import { keypairSigner, type OwnerSigner } from "./signer";
 
 export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string }
 
@@ -13,7 +15,9 @@ export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
   growthPct: number; // yield paid / principal
   yieldPerDay: number; // at the current (demo) rate
-  me?: { value: number; principal: number; playable: number; member: hm.MemberAccount };
+  me?: { value: number; principal: number; playable: number; member: hm.MemberAccount; /** UI only: just joined, not on the network yet */ pending?: boolean };
+  /** Dollars of mine locked on pact goals here (still mine until friends confirm), same formula as the group screen. */
+  locked: number;
 }
 
 export interface Snapshot {
@@ -49,6 +53,8 @@ export interface ChallengeView {
   feeTaken: boolean;
   feeUsd: number;
   forfeitUsd: number;
+  /** UI only: I just locked money here and the network has not shown it yet. */
+  joinedPending?: boolean;
 }
 export interface CrewDetail { crew: PublicKey; people: PersonView[]; bets: BetView[]; challenges: ChallengeView[]; isMember: boolean }
 
@@ -79,6 +85,8 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return data;
 }
 
+const TROUBLE = "We're having trouble connecting right now. Please try again in a moment.";
+
 function friendly(msg: string) {
   if (msg.includes("BetClosed")) return "That one is closed already.";
   if (msg.includes("BetStillOpen")) return "Voting opens when time is up.";
@@ -94,37 +102,66 @@ function friendly(msg: string) {
   if (msg.includes("CallNotExpired")) return "Your call is still running.";
   if (msg.includes("CallOpen")) return "Finish your open call first.";
   if (msg.includes("insufficient funds")) return "Not enough cash. Add money first.";
+  // Infrastructure hiccups (rate limits, offline, timeouts): never show the raw server answer to people.
+  if (/\b(429|50[234])\b|too many requests|rate limit|jsonrpc|failed to fetch|fetch failed|networkerror|network request failed|load failed|timed? ?out|econn|socket hang up|getlatestblockhash|failed to get/i.test(msg)) return TROUBLE;
   // Never show chain internals to people (brand rule: no crypto jargon).
   if (/transaction|blockhash|signature|lamport|account|program|instruction|simulation|0x[0-9a-f]/i.test(msg)) return "Something went wrong. Try again.";
   return msg;
 }
 
+/** Plain-language message for anything thrown by the client (safe to show in a toast). */
+export function friendlyError(e: unknown): string {
+  return friendly(e instanceof Error ? e.message : String(e));
+}
+
 export class LiveClient {
-  readonly owner: Keypair;
+  readonly owner: OwnerSigner;
   private conn: Connection;
   readonly mint: PublicKey;
   private sponsor: PublicKey;
 
-  private constructor(cfg: AppConfig) {
-    this.owner = loadAccount();
-    this.conn = new Connection(cfg.rpc, "confirmed");
+  private constructor(cfg: AppConfig, owner: OwnerSigner) {
+    this.owner = owner;
+    // Polite RPC: throttled, de-duplicated, shared 429 backoff (see rpc-fetch.ts). web3.js' own retry is off.
+    this.conn = new Connection(cfg.rpc, { commitment: "confirmed", fetch: createRpcFetch(), disableRetryOnRateLimit: true });
     this.mint = new PublicKey(cfg.mint);
     this.sponsor = new PublicKey(cfg.sponsor);
   }
 
-  static async connect() {
-    return new LiveClient(await api<AppConfig>("/api/config"));
+  /** Callers that ask for the same read at the same time (timers, refreshes after actions) share one round of requests. */
+  private inflight = new Map<string, Promise<unknown>>();
+  private once<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    let p = this.inflight.get(key) as Promise<T> | undefined;
+    if (!p) {
+      p = fn()
+        .catch((e) => {
+          throw new Error(friendlyError(e));
+        })
+        .finally(() => this.inflight.delete(key));
+      this.inflight.set(key, p);
+    }
+    return p;
+  }
+
+  /** `owner` is the signed-in account (Privy). Without one, the demo key stored on this device is used. */
+  static async connect(owner?: OwnerSigner) {
+    return new LiveClient(await api<AppConfig>("/api/config"), owner ?? keypairSigner(loadAccount()));
   }
 
   /** One round of reads: cash, every crew (for the leaderboard), my memberships, my open call, SOL price. */
-  async snapshot(): Promise<Snapshot> {
+  snapshot(): Promise<Snapshot> {
+    return this.once("snapshot", () => this.readSnapshot());
+  }
+  private async readSnapshot(): Promise<Snapshot> {
     const me = this.owner.publicKey;
     const ata = getAssociatedTokenAddressSync(this.mint, me);
-    const [crewAccs, memberAccs, infos] = await Promise.all([
+    const [crewAccs, memberAccs, entryAccs, infos] = await Promise.all([
       this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: [hm.discFilter(hm.ACCOUNT_DISC.Crew, bs58.encode)] }),
       this.conn.getProgramAccounts(hm.PROGRAM_ID, {
         filters: [hm.discFilter(hm.ACCOUNT_DISC.Member, bs58.encode), { memcmp: { offset: 40, bytes: me.toBase58() } }],
       }),
+      // My pact entries: money locked on goals. Home must count it, or locking looks like losing it.
+      this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.SOCIAL_ACCOUNT_DISC.Entry, 40, me) }),
       this.conn.getMultipleAccountsInfo([ata, hm.configPda(), hm.SOL_USD_FEED]),
     ]);
     const cash = infos[0] ? Number(infos[0].data.readBigUInt64LE(64)) / 1e6 : 0;
@@ -135,7 +172,17 @@ export class LiveClient {
       .filter((a) => !HIDDEN_CREWS.has(a.pubkey.toBase58()))
       .map((a) => hm.decodeCrew(a.pubkey, a.account.data))
       .filter((c) => !c.name.startsWith("[test]")); // crews created by scripts/e2e.mts
-    const vaults = await this.conn.getMultipleAccountsInfo(crews.map((c) => hm.crewVaultPda(c.address)));
+    const myEntries = entryAccs.map((a) => hm.decodeEntry(a.pubkey, a.account.data)).filter((e) => !e.claimed);
+    const challengeKeys = [...new Set(myEntries.map((e) => e.challenge.toBase58()))].map((k) => new PublicKey(k));
+    const lookups = [...crews.map((c) => hm.crewVaultPda(c.address)), ...challengeKeys];
+    const looked: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
+    for (let i = 0; i < lookups.length; i += 100) looked.push(...(await this.conn.getMultipleAccountsInfo(lookups.slice(i, i + 100))));
+    const vaults = looked.slice(0, crews.length);
+    const challenges = new Map<string, hm.ChallengeAccount>();
+    challengeKeys.forEach((k, i) => {
+      const inf = looked[crews.length + i];
+      if (inf) challenges.set(k.toBase58(), hm.decodeChallenge(k, inf.data));
+    });
     const members = new Map(memberAccs.map((a) => {
       const m = hm.decodeMember(a.pubkey, a.account.data);
       return [m.crew.toBase58(), m];
@@ -150,7 +197,16 @@ export class LiveClient {
         vault: hm.toUsd(vaultUnits),
         growthPct: principal > 0 ? (hm.toUsd(c.yieldPaid) / principal) * 100 : 0,
         yieldPerDay: principal * perDayRate,
+        locked: 0,
       };
+      for (const e of myEntries) {
+        const ch = challenges.get(e.challenge.toBase58());
+        if (!ch || !ch.crew.equals(c.address)) continue;
+        const settled = ch.participants > 0 && ch.decided === ch.participants;
+        let units = e.shares;
+        if (settled) units = ch.passedShares === 0n ? e.shares : e.status === hm.ENTRY.PASSED ? hm.commitmentPayout(e.shares, ch.passedShares, ch.failedShares) : 0n;
+        view.locked += hm.toUsd(hm.assetsForShares(units, c.totalShares, vaultUnits));
+      }
       const m = members.get(c.address.toBase58());
       if (m) {
         const value = hm.toUsd(hm.assetsForShares(m.shares, c.totalShares, vaultUnits));
@@ -176,9 +232,13 @@ export class LiveClient {
 
   // ------------------------------------------------------------ actions
   async topUp(usd: number) {
-    const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
-    const { tx } = await api<{ tx: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd, blockhash });
-    return this.submit(tx, lastValidBlockHeight);
+    try {
+      const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
+      const { tx } = await api<{ tx: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd, blockhash });
+      return await this.submit(tx, lastValidBlockHeight);
+    } catch (e) {
+      throw new Error(friendlyError(e));
+    }
   }
 
   createCrew(name: string, emoji: string, id: bigint = BigInt(Date.now())) {
@@ -220,7 +280,10 @@ export class LiveClient {
   }
 
   /** Everything the crew screen needs: people with names, bets and challenges with my position and votes. */
-  async crewDetail(crew: PublicKey): Promise<CrewDetail> {
+  crewDetail(crew: PublicKey): Promise<CrewDetail> {
+    return this.once(`detail:${crew.toBase58()}`, () => this.readCrewDetail(crew));
+  }
+  private async readCrewDetail(crew: PublicKey): Promise<CrewDetail> {
     const me = this.owner.publicKey;
     const [members, bets, challenges, crewInfo, vaultInfo] = await Promise.all([
       this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.ACCOUNT_DISC.Member, 8, crew) }),
@@ -229,7 +292,8 @@ export class LiveClient {
       this.conn.getAccountInfo(crew),
       this.conn.getAccountInfo(hm.crewVaultPda(crew)),
     ]);
-    const c = hm.decodeCrew(crew, crewInfo!.data);
+    if (!crewInfo) throw new Error("That group could not be found.");
+    const c = hm.decodeCrew(crew, crewInfo.data);
     const vault = vaultInfo ? vaultInfo.data.readBigUInt64LE(64) : 0n;
     const usd = (shares: bigint) => hm.toUsd(hm.assetsForShares(shares, c.totalShares, vault));
     const ms = members.map((a) => hm.decodeMember(a.pubkey, a.account.data));
@@ -362,8 +426,7 @@ export class LiveClient {
     return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]);
   }
   /** Start a commitment round and put money on your goal in the same tap. */
-  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number) {
-    const id = BigInt(Date.now());
+  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number, id: bigint = BigInt(Date.now())) {
     const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
     const ch = hm.challengePda(crew, id);
     return this.send([
@@ -382,10 +445,19 @@ export class LiveClient {
   }
 
   private async send(ixs: TransactionInstruction[]) {
+    try {
+      return await this.sendOnce(ixs);
+    } catch (e) {
+      // Whatever went wrong underneath (rate limits, offline, a rejected request), people get plain words.
+      throw new Error(friendlyError(e));
+    }
+  }
+
+  private async sendOnce(ixs: TransactionInstruction[]) {
     const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
     const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
-    if (needsOwner) tx.partialSign(this.owner);
+    if (needsOwner) await this.owner.sign(tx);
     const b64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
     const { tx: signed } = await api<{ tx: string }>("/api/sponsor", { tx: b64 });
     return this.submit(signed, lastValidBlockHeight);
