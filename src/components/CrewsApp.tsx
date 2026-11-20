@@ -342,7 +342,7 @@ export default function CrewsApp() {
           const ok = await act("lock", async () => {
             if (moveIn > 0) await client!.deposit(c.address, moveIn, !!c.me);
             if (join) await client!.joinWithGoal(c.address, join.challenge.address, goal, lockUsd);
-            else await client!.startCommitment(c.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, lockUsd);
+            else await client!.startCommitment(c.address, `Pact: ${goal}`.slice(0, 40), minStake, minutes, goal, lockUsd);
           }, `Locked ${usd(lockUsd)}. Invite your friends to join.`);
           if (ok) {
             setGroupKey(c.address.toBase58());

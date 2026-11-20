@@ -537,13 +537,20 @@ export class LiveClient {
     return this.send(this.withKamino(crew, [hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]));
   }
   /** Start a commitment round and put money on your goal in the same tap. */
-  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number, id: bigint = BigInt(Date.now())) {
+  async startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number, id: bigint = BigInt(Date.now())) {
     const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
     const ch = hm.challengePda(crew, id);
-    return this.send([
-      hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(minStakeUsd), endsAt),
-      ...this.withKamino(crew, [hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd))]),
-    ]);
+    const create = hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(minStakeUsd), endsAt);
+    const join = this.withKamino(crew, [hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd))]);
+    // One tap, one transaction when it fits. A long goal with the Kamino accounts can pass Solana's 1,232-byte
+    // limit; then the pact is created first and the stake locked right after (nothing is sent if it doesn't fit).
+    try {
+      return await this.sendOnce([create, ...join]);
+    } catch (e) {
+      if (!/too large/i.test(String((e as Error).message))) throw new Error(friendlyError(e));
+    }
+    await this.send([create]);
+    return this.send(join);
   }
   voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
     return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
