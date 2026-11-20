@@ -328,10 +328,10 @@ export function KaminoEarnings({ pot, hoursLeft, ended, tone = "deep" }: { pot: 
   const demoSeconds = (72 - hoursLeft) * 3600 + since * 7200;
   const earned = (pot * (YIELD_APY_PERCENT / 100) * demoSeconds) / (365 * 86400);
   return (
-    <p className={`mt-3 flex items-center justify-between gap-2 rounded-2xl px-3 py-2 text-sm ${tone === "white" ? "bg-white/15 text-white" : "bg-white/55 text-deep"}`} aria-label={`Earning ${YIELD_APY_PERCENT}% a year on Kamino, simulated`}>
+    <p className={`mt-3 flex items-center justify-between gap-2 rounded-2xl px-3 py-2 text-sm ${tone === "white" ? "bg-white/15 text-white" : "bg-white/55 text-deep"}`} aria-label={`Earning interest, ${YIELD_APY_PERCENT}% a year`}>
       <span className="flex items-center gap-2">
         <span aria-hidden className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-forest opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-forest" /></span>
-        Earning on Kamino · {YIELD_APY_PERCENT}% APY
+        Earning interest · {YIELD_APY_PERCENT}% a year
       </span>
       <span className="mono tabular-nums font-medium" aria-hidden>+${earned.toFixed(4)}</span>
     </p>

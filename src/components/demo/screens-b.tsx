@@ -518,7 +518,7 @@ function ApplePayFlow({ amount, onPaid }: { amount: number; onPaid: () => void }
         <button onClick={() => setPhase("sheet")} aria-label={`Pay ${usd(amount)} with Apple Pay`} className="flex h-14 w-full items-center justify-center gap-1.5 rounded-full bg-black text-[21px] font-medium text-white">
           <AppleLogo className="mb-1 h-6 w-5" /> Pay
         </button>
-        <p className="text-center text-xs text-muted">Apple Pay or a card. Payments by Crossmint, dollars arrive as USDC.</p>
+        <p className="text-center text-xs text-muted">Apple Pay or a card. Your balance updates in seconds.</p>
       </div>
     );
   }

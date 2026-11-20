@@ -76,10 +76,10 @@ export function GroupScreen(props: {
             <p className="flex items-center gap-2 text-sm">Group pot {current && phaseOf(current, now) === "open" && <LockedPill />}</p>
             <p className="num mt-2 text-[48px] leading-none">{usd(current ? current.potUsd : crew.vault)}</p>
             {(crew.kamino.lent > 0 || crew.kamino.earned > 0) && (
-              <p className="mt-3 flex items-center justify-between gap-2 rounded-2xl bg-white/55 px-3 py-2 text-sm" aria-label={`Lent on Kamino, ${usd(crew.kamino.earned)} earned so far`}>
+              <p className="mt-3 flex items-center justify-between gap-2 rounded-2xl bg-white/55 px-3 py-2 text-sm" aria-label={`Earning interest, ${usd(crew.kamino.earned)} so far`}>
                 <span className="flex items-center gap-2">
                   <span aria-hidden className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-forest opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-forest" /></span>
-                  {crew.kamino.lent > 0 ? "Earning on Kamino" : "Earned on Kamino"}
+                  {crew.kamino.lent > 0 ? "Earning interest" : "Interest earned"}
                 </span>
                 <span className="mono tabular-nums font-medium" aria-hidden>+${crew.kamino.earned.toFixed(crew.kamino.earned < 0.01 ? 6 : 4)}</span>
               </p>
@@ -424,7 +424,7 @@ export function ResultsScreen({ v, crewName, now, busy, onBack, onVote, onCollec
           {busy === "collect" ? "Settling" : phase === "finalizable" ? "Settle and collect" : me.payoutUsd > 0 ? `Collect ${usd(me.payoutUsd)}` : "Close this round"}
         </button>
       )}
-      {busy === "collect" && <Spinner label="Settling on the shared ledger. This takes a few seconds." />}
+      {busy === "collect" && <Spinner label="Settling the results. This takes a few seconds." />}
       {me?.entry.claimed && <p className="text-center text-sm text-muted">Collected. It is in your balance.</p>}
       {myState === "missed" && (
         <button onClick={onAppeal} className="flex min-h-11 items-center justify-center gap-2 text-sm text-muted underline">Appeal with Grok <PreviewBadge /></button>
