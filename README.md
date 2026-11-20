@@ -77,7 +77,7 @@ independent AI jurors (does the proof meet the goal, is it fraudulent, what do b
 Kleros-style. The verdict and each juror's reasons come back to the group. **The verdict is advisory: it never
 moves money by itself**; the group's vote does. The same routine coaches vague goals into measurable ones,
 nudges the group chat, and verifies public goals (like an X follower count) by reading the data itself.
-Setup: [`docs/quicknode-stream.md`](docs/quicknode-stream.md); rules: [`docs/PRODUCT.md`](docs/PRODUCT.md); every run from the live app: [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md) (8 runs: 3 judge, 4 coach, 1 verify).
+Setup: [`docs/quicknode-stream.md`](docs/quicknode-stream.md); rules: [`docs/PRODUCT.md`](docs/PRODUCT.md); every run from the live app: [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md) (11 runs: 5 judge with the 3-juror council, 4 coach, 1 verify, 1 group).
 
 ## Verified
 

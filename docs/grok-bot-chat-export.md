@@ -2,12 +2,12 @@
 
 - **Project:** Kept
 - **Team:** Josué Valles, Martín Gütter, Jairo Amaya
-- **Date range:** Friday, November 20, 2026, 11:20 AM to 11:46 AM CST (Chicago)
+- **Date range:** Friday, November 20, 2026, 11:20 AM to 12:17 PM CST (Chicago)
 - This is the Grok Bot chat log for the UBC 2026 Hackathon: every run of the "Kept Grok" routine triggered by the live Kept app (https://kept.jairoamayac.workers.dev) through its webhook.
 
 How to read it: each run has two messages. "User" is the Kept app's webhook request (the callback token is never stored, so it is [redacted]). "Grok Bot" is the routine's own run log, kept in its original wording (Spanish or English, as written), including the JSON it posted back to the app. Wallet addresses are public Solana keys, not secrets.
 
-Runs: 8 (3 judge with the 3-juror council, 4 coach, 1 verify). The last two judge runs came from disputes opened on-chain and detected by QuickNode Streams.
+Runs: 11 (5 judge with the 3-juror council, 4 coach, 1 verify, 1 group). Runs 7 and 8 came from disputes opened on-chain and detected by QuickNode Streams; runs 9 and 10 include the pact data (goal, deadline, stake, votes).
 
 ---
 
@@ -195,5 +195,77 @@ Kept Grok ran a **judge** job. Dispute: da84ccab-0d37-4c92-b884-b6420fb12c01. Me
 **Callback:** sent by POST to https://kept.jairoamayac.workers.dev/api/grok/callback. That host is allowed because it ends in .jairoamayac.workers.dev. It returned HTTP 200 with {"ok":true}.
 
 Suggestion: on-chain disputes are arriving with no goal, criterion or proof filled in. The backend should read the pact before it sends the job, or every on-chain dispute will come back NEEDS_MORE_EVIDENCE.
+
+---
+
+## Run 9: judge (Nov 20, 2026, 12:15 PM CST)
+
+**User (Kept app webhook), Nov 20, 2026, 12:15 PM CST:** Dispute appeal (`task: judge`) with the case file: pact, member, goal, deadline, stake, proof, dispute reason, member reply, group votes, and a one-time callback token. Callback token: [redacted].
+
+**Grok Bot, Nov 20, 2026, 12:15 PM CST:**
+
+Inputs: dispute 9515e7e0-6a8c-43cd-9d9c-ee899554095a in "Dispute test pact" (3 participants). Sam is the member and also opened the appeal. Goal: "No takeout for 7 days". Deadline: 2026-11-20 12:15 PM CST. Stake: $10. There's no proof on record, Sam left no reply, and the group vote is 0 kept / 0 missed. Sam's appeal says the group marked the goal as missed.
+
+Verdict: NEEDS_MORE_EVIDENCE, confidence 0.85. Tally: KEPT 0, MISSED 0, NEEDS_MORE_EVIDENCE 3.
+- Juror A (criterion): NEEDS_MORE_EVIDENCE, 0.9. There's no proof to check against the 7-day window. Coherent.
+- Juror B (fraud): NEEDS_MORE_EVIDENCE, 0.8. There's nothing to screen. Coherent.
+- Juror C (fairness): NEEDS_MORE_EVIDENCE, 0.85. The record is empty, with no reply and no votes, so taking the $10 or awarding KEPT would both be unfair. Coherent.
+
+Evidence requested: Sam should send dated delivery-app order history or card statements for the 7 days before the deadline showing no takeout, ideally with dated photos of home-cooked meals. The other 2 participants should then vote.
+
+Message for the group: "The council can't decide Sam's appeal yet. There's no proof on record, Sam hasn't replied, and nobody in the group has voted. Sam, please share dated order history or card statements for the last 7 days showing no takeout. Then the other two members should vote."
+
+The full output JSON went to the callback.
+
+Callback: POST to https://kept.jairoamayac.workers.dev/api/grok/callback (host allowed). Result: HTTP 200 {"ok":true}.
+
+---
+
+## Run 10: judge (Nov 20, 2026, 12:15 PM CST)
+
+**User (Kept app webhook), Nov 20, 2026, 12:15 PM CST:** Dispute appeal (`task: judge`) with the case file: pact, member, goal, deadline, stake, proof, dispute reason, member reply, group votes, and a one-time callback token. Callback token: [redacted].
+
+**Grok Bot, Nov 20, 2026, 12:15 PM CST:**
+
+Kept Grok: "judge" task (dispute 7028c5af-b8c5-40c4-8cc4-2f9b35cf3773)
+- Pact "Dispute test pact" has 3 participants. Member: Maria. Disputer: Leo.
+- Goal: "Run 21 km by Sunday." Deadline: 2026-11-20 12:15 PM CST. Stake: $20. The criterion is measurable.
+- Proof: none on-chain, no image. Dispute reason: "the proof doesn't show what it claims." Maria hasn't replied. Votes so far: 0 kept, 0 missed.
+
+Council (blind, 3 jurors):
+- A (criterion): NEEDS_MORE_EVIDENCE, 0.85. There's no proof to compare against the distance or date. Coherent.
+- B (fraud): NEEDS_MORE_EVIDENCE, 0.80. There's no artifact to check, so fraud can't be confirmed or ruled out. Coherent.
+- C (fairness): NEEDS_MORE_EVIDENCE, 0.85. Maria hasn't replied. Taking $20 without evidence would be unfair. Coherent.
+- Tally: KEPT 0 / MISSED 0 / NEEDS_MORE_EVIDENCE 3
+
+Verdict: NEEDS_MORE_EVIDENCE (confidence 0.85)
+Evidence requested: a dated screenshot or public link (Strava, Garmin or Apple Health) showing at least 21 km total run before 2026-11-20 18:15:30Z. If it was several runs, each one dated, or a weekly summary.
+
+Explanation for the group: The council can't decide yet: there's no proof on file, and Maria hasn't replied to Leo's dispute. Once she uploads the dated activity, the group can vote or the council can take the case again.
+
+Callback: POST to kept.jairoamayac.workers.dev/api/grok/callback (allowed host) → HTTP 200 {"ok":true}.
+
+---
+
+## Run 11: group (Nov 20, 2026, 12:17 PM CST)
+
+**User (Kept app webhook), Nov 20, 2026, 12:17 PM CST:** Group check-in request (`task: group`) with the group's members, their goals, deadlines and proof status, and a one-time callback token. Callback token: [redacted].
+
+**Grok Bot, Nov 20, 2026, 12:17 PM CST:**
+
+Task: "group" (group_id "test"). Now: 2026-11-20 18:17 UTC (12:17 PM CST). Members:
+- Maria: "Run 21 km by Sunday", in progress, no proof yet
+- Leo: "Gym 3 times this week", deadline Sunday, in progress, no proof yet
+Both deadlines (Sunday Nov 22) are within 48 h and neither has proof, so I wrote a countdown reminder for the group plus a nudge for each person.
+
+Output JSON:
+```json
+{"task":"group","group_id":"test","messages":[
+{"to":"all","text":"Weekend countdown ⏰ Maria and Leo, Sunday is less than 48 hours away. Clock's ticking, let's see those receipts!"},
+{"to":"Maria","text":"Maria, 21 km by Sunday and no proof yet 👀 Drop a Strava screenshot with distance + date when you crush it. Your legs know what to do 🏃‍♀️"},
+{"to":"Leo","text":"Leo, 3 gym sessions by Sunday means today's a great day to start 😏 No proof yet, so snap a check-in or gym selfie each time 💪"}]}
+```
+
+Callback: POST to https://kept.jairoamayac.workers.dev/api/grok/callback (the host is allowed because it ends in .jairoamayac.workers.dev) → HTTP 200, response {"ok":true}.
 
 ---
