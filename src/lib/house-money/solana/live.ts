@@ -152,6 +152,9 @@ export function friendlyError(e: unknown): string {
   return friendly(e instanceof Error ? e.message : String(e));
 }
 
+/** Entries settled per transaction (Worker cap: 9 instructions, 2 of them compute budget). */
+const FINALIZE_BATCH = 6;
+
 export class LiveClient {
   readonly owner: OwnerSigner;
   private conn: Connection;
@@ -510,18 +513,31 @@ export class LiveClient {
    * Collect your result: shares move inside the pot, so no money needs to leave Kamino. The first person to
    * collect also moves the platform's 5% (sponsored, once), which does need the pot home.
    */
-  claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
+  async claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
     const claim = hm.claimChallengeIx(this.owner.publicKey, crew, challenge);
-    return this.send(feeTaken ? [claim] : this.withKamino(crew, [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge), claim]));
+    if (feeTaken) return this.send([claim]);
+    try {
+      return await this.send(this.withKamino(crew, [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge), claim]));
+    } catch (e) {
+      // A friend collected first and already moved the 5%: the fee account exists, so collect without it.
+      const done = await this.conn.getAccountInfo(hm.feePda(challenge)).catch(() => null);
+      if (!done) throw e;
+      return this.send([claim]);
+    }
   }
   /**
    * After the voting window (hm.VOTE_WINDOW_SECS past the deadline), settles every entry nobody decided:
    * kept with more yes than no, otherwise refunded (nobody loses without a majority). Anyone can call it; the sponsor pays.
    */
-  finalizePending(crew: PublicKey, view: ChallengeView) {
+  async finalizePending(crew: PublicKey, view: ChallengeView) {
     const pending = view.entries.filter((e) => e.entry.status === hm.ENTRY.PENDING);
-    if (pending.length === 0) return Promise.resolve(null);
-    return this.send(pending.map((e) => hm.finalizeEntryIx(crew, view.challenge.address, e.entry.owner)));
+    if (pending.length === 0) return null;
+    // The sponsor accepts at most 9 instructions per transaction (2 are compute budget): settle in batches.
+    let last: Awaited<ReturnType<LiveClient["send"]>> | null = null;
+    for (let i = 0; i < pending.length; i += FINALIZE_BATCH) {
+      last = await this.send(pending.slice(i, i + FINALIZE_BATCH).map((e) => hm.finalizeEntryIx(crew, view.challenge.address, e.entry.owner)));
+    }
+    return last;
   }
   /** Finalizes what is still undecided (when the window is over), then collects. */
   async finalizeAndClaim(crew: PublicKey, view: ChallengeView, nowSecs = Date.now() / 1000) {
