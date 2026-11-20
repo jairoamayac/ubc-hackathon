@@ -23,7 +23,7 @@ Extracto público de la bitácora del equipo. Solo incluye lo del 20/11 sobre br
 
 ## 2026-11-20 (Claude, sesión de Martín) subida de los .md a Drive y GitHub
 - Pedido de Martín: subir los .md y la bitácora a Drive y a GitHub.
-- El repo `jairoamayac/ubc-hackathon` es público, y la bitácora completa incluye la dirección del Airbnb, gastos en dólares y compras de la familia. Por eso a GitHub y a la carpeta compartida del vault se subió solo un extracto (secciones del 20/11, reglas y pendientes de branding y front). La bitácora completa queda únicamente en este Project.
+- El repo `jairoamayac/ubc-hackathon` es público y la bitácora completa tiene datos personales del viaje. Por eso a GitHub y a la carpeta compartida del vault se subió solo un extracto (secciones del 20/11, reglas y pendientes de branding y front). La bitácora completa queda únicamente en este Project.
 - Drive, carpeta "PROJECT VAULT — UBC Hackathon 2026" (archivos nuevos, no se tocó ninguno existente): "Bitácora UBC, hackathon y branding.md" (extracto) y "Frontend log de Kept.md" (copia de `docs/frontend-log.md`). El kit v0.2 ya estaba subido.
 - GitHub, rama `feat/kept-frontend` (no `main`): se agregaron `docs/branding-kit-agentes.md` (kit v0.2) y `docs/bitacora-ubc.md` (extracto). `docs/frontend-log.md` ya estaba.
 - No se publicó nada en X, no se gastó dinero, no se tocaron permisos ni el programa de Solana.
