@@ -8,6 +8,7 @@ import { useState, type ReactNode } from "react";
 import type { ChallengeView, CrewView } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE } from "@/lib/brand";
 import { coachGoal } from "@/lib/coach";
+import { GrokCoach } from "../GrokCoach";
 import { usd } from "@/lib/format";
 import { StakePicker } from "../StakePicker";
 import { dateLabel, Header, Icon3D, LockedPill, Page, PreviewBadge, Steps } from "./ui";
@@ -104,6 +105,12 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
               <p role="status" className="mt-2 text-sm">{coach.note}</p>
             )}
           </section>
+          <GrokCoach goal={goal} onUse={(r) => {
+            setGoal(r.goal.slice(0, 80));
+            setCoach(null);
+            if (r.suggested_stake_usd !== null) setStake(Math.max(min, r.suggested_stake_usd));
+            setSure(false);
+          }} />
           {!join && groups.length > 1 && (
             <fieldset>
               <legend className="mb-2 text-sm text-muted">Group</legend>

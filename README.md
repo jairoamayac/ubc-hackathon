@@ -36,7 +36,9 @@ No wallet, no seed phrase, no fees: the app covers them.
 
 | What | Address |
 |---|---|
-| Program (Anchor 1.2) | [`9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht`](https://explorer.solana.com/address/9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht?cluster=devnet) |
+| Program (Anchor 1.2, with Kamino yield) | [`7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1`](https://explorer.solana.com/address/7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1?cluster=devnet) |
+| Kamino Lend market / hmUSD reserve (devnet) | `G5m4WrATTWncPShWDRkagCM934FYezTRYd2C69sTWkJQ` / `JBiEdktmtJsrrzhmHsfFSZqt2x6SLBjTwm9grDmupGZ6` |
+| Earlier program (first live demo) | `9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht` |
 | Test dollar (SPL token, 6 decimals) | [`FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn`](https://explorer.solana.com/address/FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn?cluster=devnet) |
 | Fee sponsor | `HAEaSXy5L6fQinymFH3JZZvCgwGmVVNCbWUrMH9bd9zY` |
 
@@ -51,11 +53,11 @@ Code: `programs/house_money/src` (on-chain program; the folder keeps its origina
 
 | Check | Result |
 |---|---|
-| `scripts/kept-e2e.mts` on devnet | 9/9: own goal and stake, minimum enforced, only participants confirm, nobody confirms themselves, platform gets exactly 5% once, winners split 95% (Maria $20 → $32.67), no double claim, everyone can withdraw |
-| `scripts/e2e.mts` on devnet | 15/15: group pots, shares, deposits and withdrawals |
-| `scripts/social-e2e.mts` on devnet | 14/14 (also covers yes/no bets, still in the program but not in the app) |
-| `scripts/worker-security.mts` on the live API | 14/14 attacks rejected |
-| `cargo test` | 9 unit tests |
+| `scripts/kept-e2e.mts` on devnet (via QuickNode) | 10/10: own goal and stake, minimum enforced, only participants confirm, nobody confirms themselves, platform gets exactly 5% once, winners split 95% (Maria $20 → $32.67), no double claim, everyone can withdraw, refund when nobody votes |
+| `scripts/kamino-e2e.mts` on devnet (via QuickNode) | 7/7: the pot is lent on Kamino Lend, shares are only priced with the pot home, a late joiner pays the exact price, any member can bring the pot home, real interest paid out |
+| `scripts/app-e2e.mts` on devnet (via QuickNode) | 6/6: three people with no SOL run a whole pact through the app's own client and the Worker |
+| `scripts/worker-security.mts` | 22/22 attacks rejected (sponsor co-signing, top-ups, the RPC proxy) |
+| `cargo test` | 12 unit tests |
 | Solana MCP `program_autofixer` | 0 issues |
 
 ### Grok Bot's role: a Kleros-style appeals court

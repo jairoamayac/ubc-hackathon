@@ -14,6 +14,7 @@ import { Onboarding } from "./Onboarding";
 import { GroupScreen, GoalScreen, ResultsScreen, VoteScreen } from "./CrewRoom";
 import { NewGoal } from "./kept/NewGoal";
 import { AppealSheet } from "./AppealSheet";
+import { VerifySheet } from "./VerifySheet";
 import { myGoals, percentElapsed, roundTitle, type MyGoal } from "./kept/model";
 import { Avatar, BottomNav, Dialog, Empty, ErrorNote, Header, Icon3D, LockedPill, Page, Shell, Spinner, StatePill, timeLeft, Wordmark, type Tab } from "./kept/ui";
 import { entryState } from "./kept/model";
@@ -26,7 +27,7 @@ export type Route =
   | { id: "results"; crew: string; ch: string }
   | { id: "new"; crew?: string; join?: string }
   | { id: "newGroup" };
-type Sheet = null | { id: "addFunds" } | { id: "withdraw" } | { id: "appeal"; v: ChallengeView };
+type Sheet = null | { id: "addFunds" } | { id: "withdraw" } | { id: "appeal"; v: ChallengeView } | { id: "verify"; v: ChallengeView };
 
 const YEAR = 31_536_000;
 
@@ -230,7 +231,7 @@ export default function CrewsApp() {
     const crew = crewOf(route.crew);
     const back = () => go({ id: "tab", tab: route.id === "goal" ? "home" : "group" });
     if (!v || !crew) body = <Page><Header onBack={back} /><Spinner label="Loading" /></Page>;
-    else if (route.id === "goal") body = <GoalScreen v={v} crewName={crew.name} now={now} onBack={back} onResults={() => go({ id: "results", crew: route.crew, ch: route.ch })} onAppeal={() => setSheet({ id: "appeal", v })} />;
+    else if (route.id === "goal") body = <GoalScreen v={v} crewName={crew.name} now={now} onBack={back} onResults={() => go({ id: "results", crew: route.crew, ch: route.ch })} onAppeal={() => setSheet({ id: "appeal", v })} onVerify={() => setSheet({ id: "verify", v })} />;
     else if (route.id === "vote") {
       body = <VoteScreen v={v} owner={route.owner} now={now} busy={busy === "vote"} onBack={back}
         onVote={(kept) => act("vote", () => client!.voteEntry(new PublicKey(route.crew), v.challenge.address, new PublicKey(route.owner), kept), "Thanks. Your vote is in.")}
@@ -292,7 +293,7 @@ export default function CrewsApp() {
       )}
 
       {sheet && snap && (
-        <Dialog title={sheet.id === "addFunds" ? "Add funds" : sheet.id === "withdraw" ? "Withdraw" : "Appeal"} onClose={() => setSheet(null)}>
+        <Dialog title={sheet.id === "addFunds" ? "Add funds" : sheet.id === "withdraw" ? "Withdraw" : sheet.id === "verify" ? "Verify with Grok" : "Appeal"} onClose={() => setSheet(null)}>
           {sheet.id === "addFunds" && (
             <ApplePaySheet busy={busy === "topup"} onPay={async (amt) => {
               if (await act("topup", () => client!.topUp(amt), `${usd(amt)} added.`)) setSheet(null);
@@ -306,6 +307,7 @@ export default function CrewsApp() {
               }} />
           )}
           {sheet.id === "appeal" && <AppealSheet pact={sheet.v} onClose={() => setSheet(null)} />}
+          {sheet.id === "verify" && <VerifySheet pact={sheet.v} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
     </Shell>

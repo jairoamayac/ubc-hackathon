@@ -12,6 +12,7 @@ import * as hm from "@/lib/house-money/solana/hm";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { usd } from "@/lib/format";
 import type { Act } from "./CrewsApp";
+import { GrokGroup } from "./GrokGroup";
 import { entryState, outcomeOf, percentElapsed, roundTitle } from "./kept/model";
 import { Avatar, dateLabel, Empty, Header, Icon3D, LockedPill, Page, PreviewBadge, Ring, Spinner, StatePill, timeLeft } from "./kept/ui";
 
@@ -93,6 +94,7 @@ export function GroupScreen(props: {
             <button onClick={props.onNewGoal} className="btn btn-quiet w-full"><Plus className="h-4 w-4" aria-hidden /> Start a new round</button>
           )}
           <button onClick={invite} className="btn btn-white w-full text-ink"><Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite friends"}</button>
+          {isMember && rounds.length > 0 && <GrokGroup groupId={crew.address.toBase58()} pacts={rounds} />}
 
           {past.length > 0 && (
             <section aria-labelledby="past">
@@ -219,7 +221,7 @@ function Feed({ detail, now }: { detail: CrewDetail; now: number }) {
 
 // ---------------------------------------------------------------- goal detail
 
-export function GoalScreen({ v, crewName, now, onBack, onResults, onAppeal }: { v: ChallengeView; crewName: string; now: number; onBack: () => void; onResults: () => void; onAppeal: () => void }) {
+export function GoalScreen({ v, crewName, now, onBack, onResults, onAppeal, onVerify }: { v: ChallengeView; crewName: string; now: number; onBack: () => void; onResults: () => void; onAppeal: () => void; onVerify: () => void }) {
   const me = v.mine;
   const phase = phaseOf(v, now);
   const others = v.entries.filter((e) => !e.isMe);
@@ -276,6 +278,7 @@ export function GoalScreen({ v, crewName, now, onBack, onResults, onAppeal }: { 
           {phase !== "open" && <p className="mt-2 text-xs text-muted">{votes} of {others.length} voted</p>}
         </section>
       </div>
+      {phase !== "settled" && <button onClick={onVerify} className="min-h-11 text-sm text-muted underline">Public goal, like X followers? Verify with Grok</button>}
       {me.entry.status === hm.ENTRY.FAILED && <button onClick={onAppeal} className="min-h-11 text-sm text-muted underline">Disagree with this result</button>}
     </Page>
   );
