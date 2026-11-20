@@ -470,7 +470,12 @@ async function handleStream(req: Request, url: URL, env: GrokEnv): Promise<Respo
   // `x-kept-stream-secret: <QUICKNODE_STREAM_SECRET>` (a Stream can send it as a custom header).
   const legacy = req.headers.get("x-kept-stream-secret") ?? "";
   const signed = await verifyQuickNodeSignature(req.headers, text, secret);
-  if (!signed && !(legacy && same(await sha256(legacy), await sha256(secret)))) return json({ error: "Unauthorized" }, 401);
+  if (!signed && !(legacy && same(await sha256(legacy), await sha256(secret)))) {
+    // QuickNode's "Check connection" sends an unsigned test request (no X-QN-* headers). Answer it so the
+    // dashboard can verify the URL, but process nothing: only signed deliveries are ever read or stored.
+    if (!req.headers.get("x-qn-signature") && !legacy) return json({ ok: true, note: "Reachable. Only signed deliveries are processed." });
+    return json({ error: "Unauthorized" }, 401);
+  }
   if (!env.DISPUTES) return json({ error: "Dispute storage is not configured on this server." }, 503);
   let events: ChainDispute[];
   try {
