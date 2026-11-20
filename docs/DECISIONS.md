@@ -38,7 +38,6 @@ Format: date, decision, rationale and status. Times in America/Chicago (CST).
   - `verify`: a public-data check (e.g., an X follower count, read by Grok's own X read tools) → `KEPT` / `MISSED` / `CANNOT_VERIFY`.
   - Every request carries `callback_url` (only `*.jairoamayac.workers.dev`) and a one-time `callback_token`; every callback carries `task` and goes to `POST /api/grok/callback` (with `/api/grok/verdict` as an alias). The Worker stores the pending job in KV and the app polls.
   - **Minimal path for the bounty:** the routine + test runs + the chat export (`docs/grok-bot-chat-export.md`) + the README section. No code is strictly required; wiring it into the app is a bonus (priority: judge → verify → coach → group). *Status: decided; routine live, app wiring pending.*
-- **D-024. Brand: stay on `main` (forest green with mint, no orange) and don't merge `feat/kept-ui-lila`** ("Lila y mandarina", with orange CTAs). *Status: proposed, pending team confirmation.*
 - **D-025. If nobody keeps their goal, everyone is refunded**, as the program already does (`platform_fee` = 0). This replaces D-011 (the platform keeps the pot) for the hackathon; it avoids touching the program and it's easier to defend ("we never profit from everyone failing"). *Status: proposed, pending.*
 
 ## Open questions
@@ -46,3 +45,5 @@ Format: date, decision, rationale and status. Times in America/Chicago (CST).
 - Exact minimum stake, early-quit penalty and vote deadline.
 - The proportionality cap rule for stakes.
 - Which on-ramp provider and which yield protocol (Kamino, Jupiter Lend or another: to verify).
+- **D-026. `open_dispute` is a separate `Dispute` account and advisory.** Adding a field to `Entry` would break every existing account, so the dispute is its own PDA (seeds `dispute`, entry): one per entry, created by `init`. It logs `KEPT:DisputeOpened …` and emits `DisputeOpened` for the QuickNode Stream. It does not block `claim_challenge` (a blocking flag would need a resolve path and a changed `claim` account list). `resolve_dispute` does not exist yet: the verdict stays a proposal the group confirms.
+- **D-024. Brand: stay on `main` (forest green with mint, no orange) and don't merge `feat/kept-ui-lila`** ("Lila y mandarina", with orange CTAs). *Status: proposed, pending team confirmation.*

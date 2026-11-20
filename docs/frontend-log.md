@@ -83,3 +83,4 @@ Pot $250, forfeited $150, platform 5% = $7.50, keepers $142.50, so Martin and An
 - Verify role: POST /api/verify (task "verify", X handle checked, same one-time token and callback), GET /api/verifications/:id, and a "Verify with Grok" sheet on open pacts (VerifySheet). Result KEPT, MISSED or CANNOT_VERIFY with what Grok saw. It is a public data check, not a payout.
 - Docs added in uppercase from Drive: docs/PRODUCT.md and docs/DECISIONS.md (docs/decisions.md still exists; they differ only by case, which collides on macOS and Windows checkouts).
 - Worker tests: 21 checks with fake KV and webhook, including verify (400 bad handle, 202, task and source in payload, 401 wrong or replayed token, 400 bad verdict, view without token).
+- On-chain `open_dispute` is in (separate Dispute account, KEPT:DisputeOpened log) with the signed QuickNode Stream webhook `POST /api/streams/quicknode`; the Stream itself is created by the account owner (docs/quicknode-stream.md).

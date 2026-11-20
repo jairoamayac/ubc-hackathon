@@ -64,6 +64,8 @@ Grok Bot is Kept's appeals court. When a friend disputes a proof, the app (and, 
 
 The same Grok Bot routine also coaches users into measurable goals with a stake that hurts, keeps the group chat honest with reminders and nudges, and auto-verifies public goals (like an X follower count) by reading the data itself.
 
+On-chain side: `open_dispute(reason)` (a participant of a finished pact, once per entry, before the entry is collected) writes a `Dispute` account and logs `KEPT:DisputeOpened challenge=… member=… disputer=… reason=… dispute=…` plus a `DisputeOpened` event. A QuickNode Stream (Solana devnet, filter in `scripts/quicknode-filter.js`) POSTs it, HMAC-signed, to `POST /api/streams/quicknode`; the Worker stores it in KV, attaches it to the app's appeal (or starts the judge itself) and serves it at `GET /api/disputes?challenge=<pact>`. The dispute is advisory: it moves no money and does not block settlement. Setup and tests: [`docs/quicknode-stream.md`](docs/quicknode-stream.md).
+
 Wiring (Worker only, no keys in the repo): `POST /api/appeal` stores the dispute in KV and calls the webhook, `POST /api/grok/callback` receives the verdict with a one-time token, `GET /api/disputes/:id` is what the app polls. The same webhook also serves the `verify` role: `POST /api/verify` and `GET /api/verifications/:id` power "Verify with Grok", where Grok reads a public X follower count itself. Setup: `npx wrangler secret put GROK_WEBHOOK_URL` and `npx wrangler secret put GROK_WEBHOOK_KEY`; the `DISPUTES` KV namespace is created on first deploy. The "Instant demo judge" in the appeal sheet is an offline fallback, clearly labelled.
 
 ## Run it
