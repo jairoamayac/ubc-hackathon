@@ -230,7 +230,7 @@ export default function CrewsApp() {
   if (!name) {
     return (
       <Shell>
-        <Onboarding onDone={(n) => setName(n)} />
+        <Onboarding onDone={(n) => setName(n)} nameOnly={auth.kind === "privy"} />
       </Shell>
     );
   }

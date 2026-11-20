@@ -8,7 +8,7 @@
 //  - Sign a transaction (useSignTransaction, useWallets from "@privy-io/react-auth/solana"):
 //    https://docs.privy.io/wallets/using-wallets/solana/sign-a-transaction
 //  - Create a wallet (useCreateWallet): https://docs.privy.io/wallets/wallets/create/create-a-wallet
-import { PrivyProvider, usePrivy, type User } from "@privy-io/react-auth";
+import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet, useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import { PublicKey, type Transaction } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -58,15 +58,10 @@ export default function PrivyGate({ children }: { children: ReactNode }) {
 }
 
 const PRIVY_START_TIMEOUT_MS = 10_000;
+const WALLET_WAIT_MS = 15_000;
 const KEY_NAME = "hm.name";
 const KEY_PROFILE = "hm.profile"; // the name last saved for this account
 const KEY_OWNER = "hm.owner"; // which account hm.name / hm.profile belong to
-
-function displayName(user: User | null): string {
-  const raw = user?.email?.address?.split("@")[0] || "";
-  const first = raw.trim().split(/\s+/)[0] ?? "";
-  return (first || "Friend").slice(0, 20);
-}
 
 function Session({ children }: { children: ReactNode }) {
   const { ready, authenticated, user, login, logout } = usePrivy();
@@ -95,30 +90,56 @@ function Session({ children }: { children: ReactNode }) {
   const wallet = wallets[0];
   const address = wallet?.address;
 
+  // On a reload the user comes back signed in and Privy lists their Solana account a moment later than
+  // `authenticated`. If the profile already has one, we must wait for it, never create a second one
+  // (Privy rejects that, which used to land on "We couldn't finish setting up your account").
+  const hasAccount = !!user?.linkedAccounts?.some((a) => a.type === "wallet" && "chainType" in a && a.chainType === "solana");
+
   // createOnLogin covers new sign-ins; this covers anyone who is signed in but has no account yet.
   useEffect(() => {
-    if (!ready || !authenticated || !walletsReady || wallet || creating.current) return;
+    if (!ready || !authenticated || !walletsReady || wallet || hasAccount || creating.current) return;
     creating.current = true;
     setSetupError(false);
-    createWallet().catch(() => setSetupError(true)).finally(() => {
-      creating.current = false;
-    });
-  }, [ready, authenticated, walletsReady, wallet, createWallet, setupTry]);
+    createWallet()
+      .catch((e: unknown) => {
+        // "Already has an account" is success: it will show up in the wallets list in a moment.
+        if (!/already|exist/i.test(e instanceof Error ? e.message : String(e))) setSetupError(true);
+      })
+      .finally(() => {
+        creating.current = false;
+      });
+  }, [ready, authenticated, walletsReady, wallet, hasAccount, createWallet, setupTry]);
 
-  // The rest of the app reads the name from localStorage ("hm.name"); fill it from the email once
-  // per account, and forget the old account's saved name if someone else signs in on this device.
+  // They have an account but it never showed up in the list: stop spinning and offer a real retry.
+  useEffect(() => {
+    if (!ready || !authenticated || wallet || !hasAccount) return;
+    const t = setTimeout(() => setSetupError(true), WALLET_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [ready, authenticated, wallet, hasAccount, setupTry]);
+  useEffect(() => {
+    if (wallet) setSetupError(false);
+  }, [wallet]);
+
+  // "Try again": with an account already on file the cleanest retry is a fresh load of the session.
+  const retrySetup = useCallback(() => {
+    if (hasAccount) location.reload();
+    else setSetupTry((n) => n + 1);
+  }, [hasAccount]);
+
+  // The rest of the app reads the name from localStorage ("hm.name"). We never take it from the email
+  // (it can look like "a.r.i.a+abuela"): the app asks for a first name after the first sign-in. We only forget
+  // the old account's saved name if someone else signs in on this device.
   // Idempotent, so it is safe to run more than once.
   const started = useMemo(() => {
     if (!authenticated || !address) return null;
     if (localStorage.getItem(KEY_OWNER) !== address) {
+      // A different account on this device: forget the old name; the app asks for a first name next.
       localStorage.removeItem(KEY_PROFILE);
+      localStorage.removeItem(KEY_NAME);
       localStorage.setItem(KEY_OWNER, address);
-      localStorage.setItem(KEY_NAME, displayName(user));
-    } else if (!localStorage.getItem(KEY_NAME)) {
-      localStorage.setItem(KEY_NAME, displayName(user));
     }
     return address;
-  }, [authenticated, address, user]);
+  }, [authenticated, address]);
 
   // Rebuild the signer only when the account changes, not on every wallets refresh (avoids reconnects).
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,7 +171,7 @@ function Session({ children }: { children: ReactNode }) {
     );
   }
   if (setupError) {
-    return <Problem text="We couldn't finish setting up your account." onRetry={() => setSetupTry((n) => n + 1)} onSignOut={() => void signOut()} />;
+    return <Problem text="We couldn't finish setting up your account." onRetry={retrySetup} onSignOut={() => void signOut()} />;
   }
   if (!signer || started !== address) return <Splash text="Setting up your account" />;
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

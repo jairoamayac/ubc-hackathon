@@ -10,8 +10,9 @@ import { WelcomeHero } from "./Welcome";
 /** When set (Privy), the last step signs in with email instead of asking for a first name. */
 export interface SignInOptions { onEmail: () => void; error?: string }
 
-export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void; signIn?: SignInOptions }) {
-  const [step, setStep] = useState<"hero" | "name">("hero");
+/** `nameOnly`: signed in already (Privy), so skip the welcome and just ask for the first name. */
+export function Onboarding({ onDone, signIn, nameOnly }: { onDone: (name: string) => void; signIn?: SignInOptions; nameOnly?: boolean }) {
+  const [step, setStep] = useState<"hero" | "name">(nameOnly ? "name" : "hero");
   const [name, setName] = useState("");
 
   if (step === "hero") return <WelcomeHero onStart={() => setStep("name")} />;
@@ -39,7 +40,7 @@ export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void;
     >
       <div className="flex justify-center"><Icon3D name="friends" size={120} /></div>
       <h1 className="text-[30px] font-medium leading-[1.1] tracking-tight">What should your friends call you?</h1>
-      <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+      <p className="text-lg text-muted">{nameOnly ? "This is the name your group sees." : "No password to remember. Your account is ready in a second."}</p>
       <label className="block">
         <span className="sr-only">First name</span>
         <input value={name} maxLength={20} autoComplete="given-name" autoFocus onChange={(e) => setName(e.target.value)} placeholder="Your first name"
@@ -48,7 +49,7 @@ export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void;
       <button type="submit" disabled={!name.trim()} className="btn btn-primary w-full">
         Continue <ArrowRight className="h-5 w-5" aria-hidden />
       </button>
-      <button type="button" onClick={() => setStep("hero")} className="min-h-11 text-sm text-muted">Back</button>
+      {!nameOnly && <button type="button" onClick={() => setStep("hero")} className="min-h-11 text-sm text-muted">Back</button>}
     </form>
   );
 }
