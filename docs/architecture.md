@@ -1,5 +1,8 @@
 # House Money: arquitectura y flujos
 
+> **Versión 1 (17–18 nov).** Este documento describe el primer concepto (Vault + "Call it" semanal). La arquitectura actual (crews, apuestas y retos) está en [`architecture-v2.md`](architecture-v2.md) y las decisiones en [`decisions.md`](decisions.md).
+
+
 17/11/2026. Hecho con la skill `arquitectura-de-software`: primero el diagnóstico, después el estilo; luego C4 por niveles y los patrones con sus 4 elementos (nombre, problema, solución, consecuencias).
 
 ## 1. Diagnóstico (antes de elegir patrones)

@@ -12,7 +12,7 @@ Stakes come out of your part of the pot and **keep earning yield while they're l
 Built for the UBC Hackathon 2026 (Consumer Apps track, Solana). Inspired by social prediction apps (JuryDuty), commitment apps (Pact, Forfeit, Goals) and no-loss savings (Lotty, Premium Bonds).
 
 - **Live demo (Solana devnet):** https://house-money-ubc.jairoamayac.workers.dev
-- Architecture and flows: [`docs/architecture.md`](docs/architecture.md) · Brand: [`docs/brand.md`](docs/brand.md)
+- Docs: [why it exists (problem, evidence, prior art)](docs/context.md) · [architecture](docs/architecture-v2.md) · [decisions](docs/decisions.md) · [demo guide](docs/demo.md) · [brand](docs/brand.md)
 
 ## Try it in 2 minutes
 
