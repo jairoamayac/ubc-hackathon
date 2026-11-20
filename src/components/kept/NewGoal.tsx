@@ -7,9 +7,8 @@ import { Check, Dumbbell, BookOpen, Smartphone, Repeat, Users, MoreHorizontal, S
 import { useState, type ReactNode } from "react";
 import type { ChallengeView, CrewView } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE } from "@/lib/brand";
-import { coachGoal } from "@/lib/coach";
 import { GrokCoach } from "../GrokCoach";
-import { usd } from "@/lib/format";
+import { fitGoal, usd } from "@/lib/format";
 import { StakePicker } from "../StakePicker";
 import { dateLabel, Header, Icon3D, LockedPill, Page, Steps } from "./ui";
 import { roundTitle } from "./model";
@@ -34,10 +33,10 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
   const [step, setStep] = useState(1);
   const [goal, setGoal] = useState("");
   const [cat, setCat] = useState("fitness");
-  const [coach, setCoach] = useState<ReturnType<typeof coachGoal> | null>(null);
+  const [coachStake, setCoachStake] = useState<number | null>(null);
   const [minutes, setMinutes] = useState(10080);
   const min = join ? join.stakeUsd : 1;
-  const suggested = Math.max(min, coach?.stake ?? STAKE_SUGGESTED_MIN);
+  const suggested = Math.max(min, coachStake ?? STAKE_SUGGESTED_MIN);
   const [stake, setStake] = useState(Math.max(min, STAKE_SUGGESTED_MIN));
   const [minStake, setMinStake] = useState(5);
   const [sure, setSure] = useState(false);
@@ -55,12 +54,6 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
   const endsAt = join ? join.challenge.endsAt : now + minutes * 60;
   const back = () => (step === 1 ? onBack() : setStep(step - 1));
 
-  const askGrok = () => {
-    const c = coachGoal(goal);
-    setCoach(c);
-    if (c.measurable) setStake((s) => (s < c.stake ? Math.max(min, c.stake) : s));
-  };
-
   return (
     <Page className="pb-8">
       <Header title={join ? "Join the round" : "New goal"} onBack={back} right={<span className="text-sm text-muted">{step}/3</span>} />
@@ -72,7 +65,7 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
           {join && <p className="-mt-2 text-sm text-muted">Round in {crew.name}: {roundTitle(join)}</p>}
           <label className="block">
             <span className="sr-only">Your goal</span>
-            <textarea value={goal} rows={2} autoFocus onChange={(e) => { setGoal(e.target.value.replace(/\s*\n+\s*/g, " ").slice(0, 80)); setCoach(null); }}
+            <textarea value={goal} rows={2} autoFocus onChange={(e) => setGoal(fitGoal(e.target.value.replace(/\s*\n+\s*/g, " ")))}
               onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }} placeholder="I want to run more"
               className="w-full resize-none rounded-2xl border-[1.5px] border-ink bg-white px-4 py-3.5 text-lg leading-snug outline-none placeholder:text-muted/70" />
           </label>
@@ -90,30 +83,9 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
               ))}
             </div>
           </fieldset>
-          <section className="rounded-[24px] bg-ink p-5 text-white" aria-labelledby="coach">
-            <p id="coach" className="flex items-center gap-2 text-xs text-[#C9CCC4]"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Instant coach</p>
-            {!coach ? (
-              <>
-                <p className="mt-2 text-sm text-[#C9CCC4]">Make it measurable, so your friends can tell if you kept it.</p>
-                <button type="button" onClick={askGrok} disabled={!goal.trim()} className="btn mt-3 min-h-11 w-full bg-lilac text-violet-deep">Make it measurable</button>
-              </>
-            ) : coach.measurable ? (
-              <>
-                <p className="mt-2 text-xl font-medium">{coach.goal}</p>
-                <p className="mt-1 text-sm text-[#C9CCC4]">Proof: {coach.proof.toLowerCase()}. Most people start with {usd(coach.stake)}.</p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => { setGoal(coach.goal.slice(0, 80)); setCoach(null); }} className="btn min-h-11 bg-lilac text-violet-deep">Use this</button>
-                  <button type="button" onClick={() => setCoach(null)} className="btn min-h-11 border border-white/40 text-white">Edit</button>
-                </div>
-              </>
-            ) : (
-              <p role="status" className="mt-2 text-sm">{coach.note}</p>
-            )}
-          </section>
-          <GrokCoach goal={goal} onUse={(r) => {
-            setGoal(r.goal.slice(0, 80));
-            setCoach(null);
-            if (r.suggested_stake_usd !== null) setStake(Math.max(min, r.suggested_stake_usd));
+          <GrokCoach goal={goal} onUse={(g, st) => {
+            setGoal(fitGoal(g));
+            if (st !== null) { setCoachStake(st); setStake((v) => (v < st ? Math.max(min, st) : v)); }
             setSure(false);
           }} />
           {!join && groups.length > 1 && (

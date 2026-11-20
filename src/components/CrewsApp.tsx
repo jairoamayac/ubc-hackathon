@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { PublicKey } from "@solana/web3.js";
 import { LiveClient, friendlyError, type ChallengeView, type CrewDetail, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
-import { usd } from "@/lib/format";
+import { fitGoal, usd } from "@/lib/format";
 import { ENTRY } from "@/lib/house-money/solana/hm";
 import { Onboarding } from "./Onboarding";
 import { CROSSMINT_CLIENT_KEY, useAuth } from "./auth/AuthContext";
@@ -323,7 +323,8 @@ export default function CrewsApp() {
         onPickGroup={(k) => setGroupKey(k)}
         onBack={() => go({ id: "tab", tab: route.join ? "group" : "home" })}
         onAddFunds={() => setSheet({ id: "addFunds" })}
-        onLock={async ({ crew: c, goal, stake, minutes, minStake }) => {
+        onLock={async ({ crew: c, goal: rawGoal, stake, minutes, minStake }) => {
+          const goal = fitGoal(rawGoal.trim());
           // Kamino rounds a pot down by a millionth of a dollar each time it comes home, so a stake equal to
           // the whole free amount can come up short. Keep a 1-cent cushion: move it in when the balance allows,
           // otherwise lock 1 cent less.

@@ -1,77 +1,98 @@
 "use client";
 
-// The real Grok coach (task "coach"). It takes minutes because Grok works as an agent, so the instant coach in the
-// goal form stays the default and this card only shows up as a suggestion when Grok answers.
+// Grok coach (task "coach"): turns a goal into something friends can check, with a stake that hurts.
+// One tap asks the real Grok (about 20 s). If Grok can't answer in time, the instant coach fills in so nobody waits forever.
 import { Loader2, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { CoachResult, JobView } from "@/lib/grok";
-import { AppealError, getCoachJob, startCoach, GROK_GAVE_UP, keepPolling } from "@/lib/grok-client";
+import type { CoachResult } from "@/lib/grok";
+import { coachGoal } from "@/lib/coach";
+import { getCoachJob, startCoach } from "@/lib/grok-client";
 import { usd } from "@/lib/format";
 
-export function GrokCoach({ goal, member, onUse }: { goal: string; member?: string; onUse: (r: CoachResult) => void }) {
-  const [job, setJob] = useState<JobView<CoachResult> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; if (timer.current) clearTimeout(timer.current); }, []);
+/** Give Grok this long before falling back to the instant suggestion. */
+const GROK_WAIT_MS = 90_000;
+const POLL_MS = 2_500;
 
-  const poll = (id: string, startedAt: number) => {
-    timer.current = setTimeout(async () => {
-      if (!alive.current) return;
-      try {
-        const j = await getCoachJob(id);
-        if (!alive.current) return;
-        setJob(j);
-        if (j.status === "pending") {
-          if (Date.now() - startedAt > 10 * 60_000) setError(GROK_GAVE_UP);
-          else poll(id, startedAt);
-        }
-      } catch (e) {
-        if (!alive.current) return;
-        if (keepPolling(e, startedAt)) poll(id, startedAt);
-        else setError(e instanceof AppealError ? e.message : GROK_GAVE_UP);
-      }
-    }, 5000);
+type Suggestion = { goal: string; criterion?: string; proof?: string; stake: number | null; reason?: string; fromGrok: boolean };
+
+export function GrokCoach({ goal, member, onUse }: { goal: string; member?: string; onUse: (goal: string, stake: number | null) => void }) {
+  const [state, setState] = useState<"idle" | "working" | "done" | "vague">("idle");
+  const [s, setS] = useState<Suggestion | null>(null);
+  const [note, setNote] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const run = useRef(0);
+  useEffect(() => () => { run.current++; if (timer.current) clearTimeout(timer.current); }, []);
+  // An answer belongs to the goal text it was asked for: editing the goal shows the button again.
+  const [askedFor, setAskedFor] = useState("");
+  const view = askedFor === goal ? state : "idle";
+
+  const instant = (mine: number) => {
+    if (mine !== run.current) return;
+    const c = coachGoal(goal);
+    if (!c.measurable) { setNote(c.note); setState("vague"); return; }
+    setS({ goal: c.goal, proof: c.proof, stake: c.stake, fromGrok: false });
+    setState("done");
   };
+  const fromGrok = (r: CoachResult): Suggestion => ({
+    goal: r.goal, criterion: r.criterion || undefined, proof: r.proof_method || undefined, stake: r.suggested_stake_usd, reason: r.stake_reason || undefined, fromGrok: true,
+  });
+
   const ask = async () => {
-    if (sending || !goal.trim()) return;
-    setSending(true);
-    setError(null);
+    if (!goal.trim() || view === "working") return;
+    const mine = ++run.current;
+    setAskedFor(goal);
+    setState("working");
+    const started = Date.now();
     try {
       const { job_id } = await startCoach({ raw_goal: goal.trim(), member });
-      setJob({ job_id, kind: "coach", status: "pending", created_at: Date.now() });
-      poll(job_id, Date.now());
-    } catch (e) {
-      setError(e instanceof AppealError ? e.message : "Something went wrong.");
-    } finally {
-      setSending(false);
+      const poll = () => {
+        timer.current = setTimeout(async () => {
+          if (mine !== run.current) return;
+          try {
+            const j = await getCoachJob(job_id);
+            if (mine !== run.current) return;
+            if (j.status === "decided" && j.result) { setS(fromGrok(j.result)); setState("done"); return; }
+            if (j.status === "failed") return instant(mine);
+          } catch { /* network blip: keep polling until the deadline */ }
+          if (Date.now() - started > GROK_WAIT_MS) instant(mine); else poll();
+        }, POLL_MS);
+      };
+      poll();
+    } catch {
+      instant(mine);
     }
   };
 
-  if (job?.status === "pending") {
-    return <p role="status" className="flex items-center gap-2 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin text-forest" aria-hidden /> Grok is sharpening your goal… keep going, it shows up here in a few minutes.</p>;
-  }
-  const r = job?.status === "decided" ? job.result : undefined;
-  if (r) {
-    return (
-      <div className="card space-y-2 p-4 text-sm" aria-live="polite">
-        <p className="flex items-center gap-1.5 text-xs uppercase tracking-widest text-muted"><Sparkles className="h-3.5 w-3.5 text-forest" aria-hidden /> Grok suggests</p>
-        <p className="text-base font-medium">{r.goal}</p>
-        {r.criterion && <p><span className="text-muted">We count:</span> {r.criterion}</p>}
-        {r.proof_method && <p><span className="text-muted">Proof:</span> {r.proof_method}</p>}
-        {r.suggested_stake_usd !== null && <p><span className="text-muted">A stake that hurts:</span> {usd(r.suggested_stake_usd)}{r.stake_reason ? `. ${r.stake_reason}` : ""}</p>}
-        {r.tips.length > 0 && <ul className="list-disc pl-5 text-muted">{r.tips.map((t) => <li key={t}>{t}</li>)}</ul>}
-        <button type="button" onClick={() => onUse(r)} className="btn btn-primary mt-1 w-full">Use this goal</button>
-      </div>
-    );
-  }
   return (
-    <div>
-      <button type="button" onClick={ask} disabled={!goal.trim() || sending} className="min-h-11 text-sm text-forest underline disabled:opacity-45">
-        {sending ? "Sending to Grok…" : "Ask the real Grok too (takes a few minutes)"}
-      </button>
-      {(error || job?.status === "failed") && <p role="alert" className="text-sm text-danger">{error ?? job?.error ?? "We could not reach Grok."} The instant coach above still works.</p>}
-    </div>
+    <section className="rounded-[24px] bg-ink p-5 text-white" aria-labelledby="coach" aria-live="polite">
+      <p id="coach" className="flex items-center gap-2 text-xs text-[#C9CCC4]"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Grok coach</p>
+      {view === "idle" && (
+        <>
+          <p className="mt-2 text-sm text-[#C9CCC4]">Grok makes it measurable, so your friends can tell if you kept it.</p>
+          <button type="button" onClick={ask} disabled={!goal.trim()} className="btn mt-3 min-h-11 w-full bg-lilac text-violet-deep">Make it measurable</button>
+        </>
+      )}
+      {view === "working" && (
+        <p role="status" className="mt-3 flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin text-lilac" aria-hidden /> Grok is working on your goal. About 20 seconds.</p>
+      )}
+      {view === "vague" && (
+        <>
+          <p role="status" className="mt-2 text-sm">{note}</p>
+          <button type="button" onClick={() => setState("idle")} className="btn mt-3 min-h-11 w-full border border-white/40 text-white">Try again</button>
+        </>
+      )}
+      {view === "done" && s && (
+        <>
+          <p className="mt-2 text-xl font-medium leading-snug">{s.goal}</p>
+          {s.criterion && <p className="mt-2 text-sm text-[#C9CCC4]"><span className="text-white">We count:</span> {s.criterion}</p>}
+          {s.proof && <p className="mt-1 text-sm text-[#C9CCC4]"><span className="text-white">Proof:</span> {s.proof}</p>}
+          {s.stake !== null && <p className="mt-1 text-sm text-[#C9CCC4]"><span className="text-white">A stake that hurts:</span> {usd(s.stake)}{s.reason ? `. ${s.reason}` : ""}</p>}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => onUse(s.goal, s.stake)} className="btn min-h-11 bg-lilac text-violet-deep">Use this</button>
+            <button type="button" onClick={() => { run.current++; setState("idle"); setS(null); }} className="btn min-h-11 border border-white/40 text-white">Edit</button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
