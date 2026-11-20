@@ -23,7 +23,10 @@ const slides = [
   },
 ];
 
-export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
+/** When set, the last step signs in with Google or email instead of asking for a first name. */
+export interface SignInOptions { onGoogle: () => void; onEmail: () => void; error?: string }
+
+export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void; signIn?: SignInOptions }) {
   const [i, setI] = useState(0);
   const [name, setName] = useState("");
   const last = i === slides.length;
@@ -52,6 +55,18 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
           <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">{slides[i].title}</h1>
           <p className="text-lg leading-relaxed text-muted">{slides[i].body}</p>
           {i === 0 && <p className="text-sm text-muted">{TAGLINE}</p>}
+        </div>
+      ) : signIn ? (
+        <div className="enter flex flex-1 flex-col justify-center gap-5">
+          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">Sign in to start</h1>
+          <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+          <button type="button" onClick={signIn.onGoogle} className="btn btn-primary w-full py-4 text-lg">
+            Continue with Google
+          </button>
+          <button type="button" onClick={signIn.onEmail} className="btn btn-quiet w-full py-4 text-lg">
+            Continue with email
+          </button>
+          {signIn.error && <p role="alert" className="text-sm text-danger">{signIn.error}</p>}
         </div>
       ) : (
         <form

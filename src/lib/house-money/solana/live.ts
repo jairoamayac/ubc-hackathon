@@ -6,6 +6,7 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import * as hm from "./hm";
+import { keypairSigner, type OwnerSigner } from "./signer";
 
 export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string }
 
@@ -100,20 +101,21 @@ function friendly(msg: string) {
 }
 
 export class LiveClient {
-  readonly owner: Keypair;
+  readonly owner: OwnerSigner;
   private conn: Connection;
   readonly mint: PublicKey;
   private sponsor: PublicKey;
 
-  private constructor(cfg: AppConfig) {
-    this.owner = loadAccount();
+  private constructor(cfg: AppConfig, owner: OwnerSigner) {
+    this.owner = owner;
     this.conn = new Connection(cfg.rpc, "confirmed");
     this.mint = new PublicKey(cfg.mint);
     this.sponsor = new PublicKey(cfg.sponsor);
   }
 
-  static async connect() {
-    return new LiveClient(await api<AppConfig>("/api/config"));
+  /** `owner` is the signed-in account (Privy). Without one, the demo key stored on this device is used. */
+  static async connect(owner?: OwnerSigner) {
+    return new LiveClient(await api<AppConfig>("/api/config"), owner ?? keypairSigner(loadAccount()));
   }
 
   /** One round of reads: cash, every crew (for the leaderboard), my memberships, my open call, SOL price. */
@@ -385,7 +387,7 @@ export class LiveClient {
     const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
     const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
-    if (needsOwner) tx.partialSign(this.owner);
+    if (needsOwner) await this.owner.sign(tx);
     const b64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
     const { tx: signed } = await api<{ tx: string }>("/api/sponsor", { tx: b64 });
     return this.submit(signed, lastValidBlockHeight);
