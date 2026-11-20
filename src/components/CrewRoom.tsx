@@ -4,13 +4,15 @@
 // when time is up the people who put money in confirm who kept their word. Walk away and you lose it:
 // the friends who kept theirs get the rest after a small platform fee (see FEE_PERCENT in lib/brand).
 // Everything here is sponsored, with no wallet in sight.
-import { Check, Clock, Link2, Loader2, Plus, X } from "lucide-react";
+import { Check, Clock, Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import type { ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "@/lib/house-money/solana/live";
 import * as hm from "@/lib/house-money/solana/hm";
-import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_CHIPS } from "@/lib/brand";
+import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE } from "@/lib/brand";
+import { coachGoal } from "@/lib/coach";
 import { AppealSheet } from "./AppealSheet";
+import { StakePicker } from "./StakePicker";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
 import { usd } from "@/lib/format";
 
@@ -215,6 +217,12 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
         <span className={`shrink-0 rounded-full px-3 py-0.5 text-sm ${open ? "bg-mint text-forest" : settled ? "border border-stone text-muted" : "bg-forest text-white"}`}>{status}</span>
       </div>
 
+      {open && amIn && ch.endsAt - now < 86400 && (
+        <p role="status" className="rounded-xl border border-forest bg-mint px-4 py-3 text-sm text-forest">
+          <span className="font-medium">Your goal is at risk.</span> Less than a day left. Do the thing, your friends will check.
+        </p>
+      )}
+
       <ul className="divide-y divide-stone" aria-label="Goals in this pact">
         {c.entries.map((e) => {
           const st = e.entry.status;
@@ -327,34 +335,52 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
   onSubmit: (v: { goal: string; stake: number; minutes: number; minStake: number }) => void;
 }) {
   const [goal, setGoal] = useState("");
-  const options = useMemo(() => {
-    const o: number[] = STAKE_CHIPS.filter((v) => v >= min);
-    return o.length > 0 ? o : [min];
-  }, [min]);
-  // Start on the biggest chip you can afford, preferring $20; if none fits, the smallest chip (the button then asks to add money).
-  const [stake, setStake] = useState(() => {
-    const affordable = options.filter((v) => v <= free);
-    return affordable.includes(20) ? 20 : affordable.length > 0 ? affordable[affordable.length - 1] : options[0];
-  });
+  const [coach, setCoach] = useState<ReturnType<typeof coachGoal> | null>(null);
+  // No fixed chips: the amount is free, Grok suggests one. We start on the suggestion if you can afford it.
+  const suggested = Math.max(min, coach?.stake ?? STAKE_SUGGESTED_MIN);
+  const [stake, setStake] = useState(() => Math.max(min, Math.min(STAKE_SUGGESTED_MIN, Math.floor(free)) || min));
   const [minutes, setMinutes] = useState(10080);
   const [minStake, setMinStake] = useState(5);
+  const [sure, setSure] = useState(false);
   const tooMuch = stake > free;
+  const veryHigh = stake > suggested * STAKE_WARN_MULTIPLE;
+  const blocked = !goal.trim() || busy || tooMuch || (veryHigh && !sure);
+  const askGrok = () => {
+    const c = coachGoal(goal);
+    setCoach(c);
+    if (c.measurable) {
+      setGoal(c.goal.slice(0, 80));
+      setStake((s) => (s === Math.max(min, STAKE_SUGGESTED_MIN) || s < c.stake ? Math.max(min, Math.min(c.stake, Math.max(min, Math.floor(free)))) : s));
+    }
+  };
   return (
-    <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); if (goal.trim() && !busy && !tooMuch) onSubmit({ goal: goal.trim(), stake, minutes, minStake: Math.min(minStake, stake) }); }}>
+    <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); if (!blocked) onSubmit({ goal: goal.trim(), stake, minutes, minStake: Math.min(minStake, stake) }); }}>
       <label className="block">
         <span className="mb-2 block text-sm text-muted">Your goal</span>
-        <input value={goal} onChange={(e) => setGoal(e.target.value.slice(0, 80))} placeholder="Run 21 km by Sunday"
+        <input value={goal} onChange={(e) => { setGoal(e.target.value.slice(0, 80)); setCoach(null); }} placeholder="Run 21 km by Sunday"
           className="card w-full px-4 py-3 text-lg outline-none placeholder:text-muted/70 focus:border-forest" aria-describedby="goal-ideas" />
       </label>
       <div id="goal-ideas" className="flex flex-wrap gap-2" aria-label="Ideas">
-        {GOAL_IDEAS.map((i) => <button type="button" key={i} onClick={() => setGoal(i)} className="min-h-9 rounded-full bg-mint px-3 text-sm text-forest">{i}</button>)}
+        {GOAL_IDEAS.map((i) => <button type="button" key={i} onClick={() => { setGoal(i); setCoach(null); }} className="min-h-9 rounded-full bg-mint px-3 text-sm text-forest">{i}</button>)}
       </div>
-      <fieldset>
-        <legend className="mb-2 text-sm text-muted">Money you lock{min > 1 ? ` (at least ${usd(min)})` : ""}</legend>
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
-          {options.map((v) => <button type="button" key={v} onClick={() => setStake(v)} aria-pressed={stake === v} className="tile min-h-12 py-2 font-medium">${v}</button>)}
-        </div>
-      </fieldset>
+      <div>
+        <button type="button" onClick={askGrok} disabled={!goal.trim()} className="flex min-h-11 items-center gap-1.5 rounded-full border border-stone px-4 text-sm font-medium disabled:opacity-45">
+          <Sparkles className="h-4 w-4 text-forest" aria-hidden /> Make it measurable with Grok <span className="rounded-md bg-stone px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-muted">Demo</span>
+        </button>
+        {coach && (
+          <p role="status" className={`mt-2 text-sm ${coach.measurable ? "text-forest" : "text-danger"}`}>
+            {coach.note}
+            {coach.measurable && <span className="mt-1 block text-muted">We count: {coach.metric.toLowerCase()}. Proof: {coach.proof.toLowerCase()}.</span>}
+          </p>
+        )}
+      </div>
+      <StakePicker value={stake} onChange={(v) => { setStake(v); setSure(false); }} min={min} max={Math.floor(free)} suggested={suggested} />
+      {veryHigh && !tooMuch && (
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} className="mt-1 h-5 w-5 accent-[#1F5F4A]" />
+          <span>Yes, I want to lock {usd(stake)}. I understand I lose it if I walk away.</span>
+        </label>
+      )}
       {withPactSettings && (
         <>
           <fieldset>
@@ -366,7 +392,7 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
           <fieldset>
             <legend className="mb-2 text-sm text-muted">Minimum for friends who join</legend>
             <div className="grid grid-cols-4 gap-2">
-              {[1, 5, 10, 20].map((v) => <button type="button" key={v} onClick={() => setMinStake(v)} aria-pressed={minStake === v} className="tile min-h-11 py-2 text-sm">${v}</button>)}
+              {[1, 5, 10, 50].map((v) => <button type="button" key={v} onClick={() => setMinStake(v)} aria-pressed={minStake === v} className="tile min-h-11 py-2 text-sm">${v}</button>)}
             </div>
           </fieldset>
         </>
@@ -377,7 +403,7 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
         <p><span className="font-medium text-danger">Walk away:</span> you lose {usd(stake)}. {KEEPERS_PERCENT}% goes to the friends who kept theirs, {FEE_PERCENT}% to {PROJECT_NAME}.</p>
         <p className="text-muted">It stays locked until the people who put money in confirm the result.</p>
       </div>
-      <button type="submit" disabled={!goal.trim() || busy || tooMuch} className="btn btn-primary w-full py-4 text-lg">
+      <button type="submit" disabled={blocked} className="btn btn-primary w-full py-4 text-lg">
         {tooMuch ? "Add money to this group first" : busy ? "Locking" : `${cta} ${usd(stake)}`}
       </button>
     </form>

@@ -8,6 +8,8 @@ Every change made to the app's front end by Claude in Martin's session goes here
 The branch was cut from `main` at `04d59c5` ("Burn the Boats end to end"). That commit had already rebuilt the screens on the branding kit v0.1 (Forest palette, Inter, the dot, the Locked pill), removed the bets, and added own goals, participants-only confirmation and the 95/5 split. So this log covers only what was still missing.
 
 ### Brief received from Martin
+> Update, second pass (see "Second pass" at the end): the chips of item 2 were replaced by a free amount with a Grok suggestion, following the product decisions of 20 Nov (spec section 13).
+
 1. Rebrand to **Kept**, drop crypto jargon, remove the bets tab.
 2. Join with own goal and own stake: chips of $10, $20 and $50, and a summary of the consequence before confirming.
 3. Voting only for people who put money in, and a results screen that shows who kept their word, how much each one collects and how much goes to the platform.
@@ -38,3 +40,37 @@ Already done by the earlier commit, so not touched: Forest palette, no bets in t
 * `npx eslint src`: clean.
 * `npm run build`: compiles and passes TypeScript. In this sandbox the build cannot download Google Fonts, so it was run on a temporary copy with the two `next/font/google` calls stubbed out; the repo's `layout.tsx` is unchanged. On a machine with internet the normal `npm run build` works.
 * Not checked: the screens were not opened in a browser and nothing was run against devnet. Please click through: start a pact, join with a goal, confirm, settle, open "Disagree with this result".
+
+
+## Second pass (20 Nov): offline demo, stake without chips, coach
+
+Source: "Kept: spec técnica, backlog y milestones", sections 13.1 to 13.6 (product decisions of 20 Nov), which replace the earlier chips and 60/40 split.
+
+### What changed
+| Area | Change | Files |
+|---|---|---|
+| Stake | Chips of $10, $20 and $50 are gone. The screen asks "How much would it hurt to lose?" with a free amount, plus and minus buttons, a "Grok suggests" button, a nudge below the suggested minimum ($50) and an extra confirmation above 3 times the suggestion. | `src/components/StakePicker.tsx`, `src/components/CrewRoom.tsx` (`GoalForm`), `src/lib/brand.ts` |
+| Coach | "Make it measurable with Grok": rejects life goals ("be happier"), rewrites loose goals into measurable ones, says what is counted and what proof is needed, suggests an amount. Deterministic rules, no network. Marked Demo. | `src/lib/coach.ts` |
+| Settlement | The reparto (95/5, keepers share by stake, refund when nobody missed or nobody kept) lives in one pure module with a self check. | `src/lib/settlement.ts`, `scripts/check-settlement.mts` |
+| Demo | New route `/demo`: the whole 75 second story with no backend and no network. Ten screens: login, home, goal wizard (3 steps, lock animation), group, goal detail (progress ring, countdown, upload proof, timeline, friends and votes), feed with proofs and Grok Bot messages, vote, dispute and appeal, results, profile. Five people, $50 each, pot $250. Martin and Ana keep their word. Ben disputes Martin's proof, Martin appeals, Grok Bot proposes "Approved (92%)", Ana, Cara and Dani confirm (3 of 4), Martin collects $121.25. Press D for the next step, "Play all" for the whole story, "Reset" to start again. | `src/app/demo/page.tsx`, `src/components/demo/*`, `src/lib/demo/store.ts` |
+| Appeal (live app) | The appeal sheet now shows the same states as the real flow (Dispute opened, Detected on-chain, Grok Bot is reviewing with ticking checks, proposal). Still simulated and labeled Demo. | `src/components/AppealSheet.tsx` |
+| Small | "Your goal is at risk" banner under 24 hours on a pact you are in. Onboarding links to `/demo`. Leaving early (50% of the stake, suggested) is explained in the demo goal screen only. | `CrewRoom.tsx`, `Onboarding.tsx` |
+
+### Numbers in the demo (spec 13.2)
+Pot $250, forfeited $150, platform 5% = $7.50, keepers $142.50, so Martin and Ana get $121.25 each. Check: $121.25 + $121.25 + $7.50 = $250. Simulated yield: about $0.14 over 5 days at 4% a year, platform share 35% is about $0.05. Both are shown as simulated.
+
+### What is real and what is simulated here
+* Real: nothing in `/demo` touches a network. The live app (`/`) is unchanged in how it talks to devnet.
+* Simulated in `/demo`: sign in, funds, votes of the friends, the Grok Bot review and the on-chain steps, the receipt, the yield, "leave early".
+* Not wired yet: the live appeal to the real Grok Bot routine and the QuickNode Stream (milestone M7).
+
+### Things to know
+* The live app still lets a pact set its own minimum (`minStake`); the picker enforces it as the hard floor and treats $50 as the suggested minimum only.
+* Leaving early, the yield split and the voting block are suggestions in the spec, not closed. The demo shows them as such.
+* `/demo` and the live app are separate on purpose: the demo cannot break the real flow.
+
+### How it was checked
+* `npx eslint src`: clean. `npm run build` on a copy with the Google Fonts calls stubbed: compiles and prerenders `/` and `/demo`.
+* `node scripts/check-settlement.mts`: passes (demo numbers, refund cases, uneven stakes, yield).
+* Walked `/demo` in headless Chrome from login to "Collect $121.25": no console errors, and none of the words wallet, seed, token or 0x on screen.
+* Not checked: the live app against devnet from a browser, on a real phone, or with a screen reader.

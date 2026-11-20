@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
 
@@ -77,6 +78,11 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
         <button onClick={() => setI(i + 1)} className="btn btn-primary mt-6 w-full py-4 text-lg">
           {i === 0 ? "Get started" : "Next"} <ArrowRight className="h-5 w-5" aria-hidden />
         </button>
+      )}
+      {i === 0 && (
+        <Link href="/demo" className="mt-3 flex min-h-11 items-center justify-center text-sm text-forest underline">
+          See the whole story in 75 seconds
+        </Link>
       )}
     </div>
   );

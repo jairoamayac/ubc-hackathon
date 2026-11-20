@@ -11,6 +11,10 @@ Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md); 
 - **Devnet proof:** [every escrow, pact and payout with explorer links](docs/devnet-proof.md)
 - **Docs:** [why it exists](docs/context.md) · [architecture](docs/architecture.md) · [decisions](docs/decisions.md) · [demo and pitch](docs/demo.md)
 
+## Try the demo
+
+Open `/demo` for the whole story in 75 seconds, offline and simulated: five friends, $50 each, a disputed proof, a Grok Bot proposal, and a payout. Press **D** for the next step, or **Demo controls > Play all**.
+
 ## Try it
 
 1. Open the demo group link, enter your first name.

@@ -8,5 +8,13 @@ export const TAGLINE = "Promises that keep themselves.";
 export const FEE_PERCENT = 5;
 export const KEEPERS_PERCENT = 100 - FEE_PERCENT;
 
-// Stake chips offered when locking money on a goal.
-export const STAKE_CHIPS = [10, 20, 50] as const;
+// Stakes have to hurt (product decision 20 Nov, spec section 13): no fixed chips. The goal coach suggests an
+// amount; below the suggested minimum we nudge, far above 3x the suggestion we ask for a second confirmation.
+export const STAKE_SUGGESTED_MIN = 50;
+export const STAKE_WARN_MULTIPLE = 3;
+
+// Roadmap numbers shown as simulated in the demo (spec 13.1 and 13.3). Not final, not real money.
+export const YIELD_APY_PERCENT = 4;
+export const PLATFORM_YIELD_PERCENT = 35;
+// Leaving early keeps this share of the stake in the pot (suggested, not closed).
+export const LEAVE_EARLY_LOSS_PERCENT = 50;
