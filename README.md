@@ -58,6 +58,14 @@ Code: `programs/house_money/src` (on-chain program; the folder keeps its origina
 | `cargo test` | 9 unit tests |
 | Solana MCP `program_autofixer` | 0 issues |
 
+### Grok Bot's role: a Kleros-style appeals court
+
+Grok Bot is Kept's appeals court. When a friend disputes a proof, the app (and, on-chain, a QuickNode Stream watching our program's `DisputeOpened` event) sends the case to a Grok Bot routine through its webhook. The routine convenes a council of three independent AI jurors with different lenses (does the proof meet the criterion, is it fraudulent, what do both parties say). They vote blind using the Schelling-point game theory behind Kleros: each juror votes for the verdict it expects the other honest jurors to reach, the majority wins, and coherent jurors are marked as such. The verdict and each juror's reasons come back to our Worker, the group sees them, and only then does our backend sign the on-chain `resolve`. Grok Bot proposes, the contract settles, and no one's money moves on a single opinion. The chat export is in `docs/grok-bot-chat-export.md`.
+
+The same Grok Bot routine also coaches users into measurable goals with a stake that hurts, keeps the group chat honest with reminders and nudges, and auto-verifies public goals (like an X follower count) by reading the data itself.
+
+Wiring (Worker only, no keys in the repo): `POST /api/appeal` stores the dispute in KV and calls the webhook, `POST /api/grok/callback` receives the verdict with a one-time token, `GET /api/disputes/:id` is what the app polls. Setup: `npx wrangler secret put GROK_WEBHOOK_URL` and `npx wrangler secret put GROK_WEBHOOK_KEY`; the `DISPUTES` KV namespace is created on first deploy. The "Instant demo judge" in the appeal sheet is an offline fallback, clearly labelled.
+
 ## Run it
 
 ```bash

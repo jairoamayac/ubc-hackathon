@@ -74,3 +74,9 @@ Pot $250, forfeited $150, platform 5% = $7.50, keepers $142.50, so Martin and An
 * `node scripts/check-settlement.mts`: passes (demo numbers, refund cases, uneven stakes, yield).
 * Walked `/demo` in headless Chrome from login to "Collect $121.25": no console errors, and none of the words wallet, seed, token or 0x on screen.
 * Not checked: the live app against devnet from a browser, on a real phone, or with a screen reader.
+
+## Grok council (branch feat/grok-council)
+- Worker: /api/appeal, /api/grok/callback (alias /api/grok/verdict), /api/disputes/:id, /api/streams/quicknode (inert until the program emits the log). Secrets GROK_WEBHOOK_URL and GROK_WEBHOOK_KEY via wrangler, never committed. KV binding DISPUTES.
+- App: AppealSheet sends to the council, polls every 5 s, shows 3 juror cards, tally and verdict. "Instant demo judge" stays as an offline fallback.
+- Worker handlers tested with a fake KV and fake webhook: 202, bearer, callback_url on the Worker host, wrong token 401, bad verdict 400, replay 401, decided view without token leak, webhook failure 502.
+- Not done: on-chain open_dispute and the real QuickNode Stream; roles verify, coach and group (the webhook supports them via "task").

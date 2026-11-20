@@ -1,13 +1,16 @@
 "use client";
 
 // Appeal flow: the person disagrees with a result, attaches proof (a screenshot) and gets a review.
-// DEMO: the review is simulated on the device. Nothing is uploaded, the verdict is chosen with the
-// demo control below, and it does not change the result or anyone's money. In production an accepted
-// appeal is reviewed by Grok Bot and its decision is recorded with the result (docs/architecture-v2.md §5, row 4).
-import { Check, ImagePlus, ShieldCheck, X } from "lucide-react";
+// LIVE: "Send to the Grok council" starts the Grok Bot routine through the Worker (/api/appeal) and polls
+// /api/disputes/:id until the council of three jurors has voted. The council only PROPOSES a verdict, it never
+// moves money. "Instant demo judge" is the offline fallback: simulated on the device, nothing is uploaded,
+// so a video never depends on timing.
+import { Check, ImagePlus, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChallengeView } from "@/lib/house-money/solana/live";
 import { usd } from "@/lib/format";
+import type { DisputeView } from "@/lib/grok";
+import { AppealError, getDispute, shrinkImage, startAppeal } from "@/lib/grok-client";
 import { Check3 } from "./demo/parts";
 
 type Reason = { label: string; ok: boolean; detail: string };
@@ -47,7 +50,11 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
   const [preview, setPreview] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [demoAccepts, setDemoAccepts] = useState(true);
-  const [phase, setPhase] = useState<"form" | "reviewing" | "done">("form");
+  const [phase, setPhase] = useState<"form" | "reviewing" | "done" | "council">("form");
+  const [dispute, setDispute] = useState<DisputeView | null>(null);
+  const [sending, setSending] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [waited, setWaited] = useState(0);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
 
   // The preview URL is created in the handler (not in an effect) and released when replaced or on unmount.
@@ -80,6 +87,57 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
       }, at));
     });
   };
+
+  // LIVE path: Worker starts the routine, then we poll every 5 seconds. The Bot runs as an agent and can take
+  // a few minutes, so there is no short timeout: we keep asking until it answers or the sheet is closed.
+  const polling = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; if (polling.current) clearTimeout(polling.current); }, []);
+  const poll = (id: string, startedAt: number) => {
+    polling.current = setTimeout(async () => {
+      if (!alive.current) return;
+      setWaited(Math.round((Date.now() - startedAt) / 1000));
+      try {
+        const d = await getDispute(id);
+        if (!alive.current) return;
+        setDispute(d);
+        if (d.status === "pending") poll(id, startedAt);
+      } catch {
+        if (alive.current) poll(id, startedAt); // a lost request is not a lost verdict
+      }
+    }, 5000);
+  };
+  const sendLive = async () => {
+    if (sending) return;
+    setSending(true);
+    setLiveError(null);
+    try {
+      const me = pact.entries.find((e) => e.isMe);
+      const image = file ? await shrinkImage(file).catch(() => undefined) : undefined;
+      const { dispute_id } = await startAppeal({
+        challenge: pact.challenge.address.toBase58(),
+        member: me?.name ?? "A member",
+        disputer: "a friend in the group",
+        goal,
+        criterion: pact.challenge.title ? `Pact: ${pact.challenge.title}. Do what the goal says, with proof, before the deadline.` : "Do what the goal says, with proof, before the deadline.",
+        deadline: new Date(pact.challenge.endsAt * 1000).toISOString(),
+        dispute_reason: "A friend says the goal was not met.",
+        member_reply: note,
+        proof: { description: note || (file ? "Screenshot attached." : "No screenshot attached.") },
+        image_data_url: image,
+      });
+      setDispute({ dispute_id, status: "pending", created_at: Date.now() });
+      setPhase("council");
+      setWaited(0);
+      poll(dispute_id, Date.now());
+    } catch (e) {
+      setLiveError(e instanceof AppealError ? e.message : "Something went wrong.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (phase === "council" && dispute) return <CouncilView dispute={dispute} goal={goal} stake={stake} waited={waited} onClose={onClose} onInstant={() => { if (polling.current) clearTimeout(polling.current); setPhase("form"); }} />;
 
   if (phase === "reviewing") {
     return (
@@ -149,7 +207,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
           )}
           {file && <span className="text-xs">{file.name}. Tap to change.</span>}
         </label>
-        <p className="mt-2 text-xs text-muted">In this demo your screenshot stays on this device.</p>
+        <p className="mt-2 text-xs text-muted">With the Grok council the screenshot is shrunk and sent so the jurors can open it. The instant demo judge keeps it on this device.</p>
       </div>
 
       <label className="block">
@@ -163,16 +221,84 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
       </label>
 
       <fieldset className="rounded-xl bg-mint p-3">
-        <legend className="px-1 text-xs text-muted">Demo control: the verdict to show</legend>
+        <legend className="px-1 text-xs text-muted">Instant demo judge: the verdict to show</legend>
         <div className="mt-1 grid grid-cols-2 gap-2">
           <button type="button" aria-pressed={demoAccepts} onClick={() => setDemoAccepts(true)} className="tile min-h-11 py-2 text-sm">Accepted</button>
           <button type="button" aria-pressed={!demoAccepts} onClick={() => setDemoAccepts(false)} className="tile min-h-11 py-2 text-sm">Not accepted</button>
         </div>
       </fieldset>
 
-      <button onClick={send} disabled={!file} className="btn btn-primary w-full py-4 text-lg">
-        {file ? "Send for review" : "Add a screenshot first"}
+      {liveError && <p role="alert" className="text-sm text-danger">{liveError} You can still use the instant demo judge below.</p>}
+      <button onClick={sendLive} disabled={sending} className="btn btn-primary w-full py-4 text-lg">
+        {sending ? <><Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Sending to Grok</> : "Send to the Grok council"}
       </button>
+      <p className="-mt-2 text-xs text-muted">Three independent AI jurors review your case and vote blind. It can take a few minutes. They propose a verdict, your group sees it, and your money does not move on one opinion.</p>
+      <button onClick={send} disabled={!file} className="btn btn-quiet w-full">
+        {file ? "Instant demo judge (simulated)" : "Instant demo judge: add a screenshot first"}
+      </button>
+    </div>
+  );
+}
+
+
+const VERDICT_LABEL = { KEPT: "Kept", MISSED: "Missed", NEEDS_MORE_EVIDENCE: "Needs more evidence" } as const;
+const LENS_LABEL: Record<string, string> = { criterion: "Does the proof meet the goal?", fraud: "Is it fraudulent?", fairness: "What do both sides say?" };
+
+function CouncilView({ dispute, goal, stake, waited, onClose, onInstant }: { dispute: DisputeView; goal: string; stake: number; waited: number; onClose: () => void; onInstant: () => void }) {
+  if (dispute.status === "failed") {
+    return (
+      <div className="space-y-4" role="alert">
+        <p className="font-medium text-danger">We could not reach the Grok council.</p>
+        <p className="text-sm text-muted">{dispute.error ?? "Try again in a moment."}</p>
+        <button onClick={onInstant} className="btn btn-primary w-full">Back to the appeal</button>
+      </div>
+    );
+  }
+  if (dispute.status === "pending") {
+    return (
+      <div className="space-y-5 py-2" role="status" aria-live="polite">
+        <div className="flex items-center gap-3"><Loader2 className="h-6 w-6 animate-spin text-forest" aria-hidden /><p className="font-medium">The Grok council is deliberating…</p></div>
+        <Check3 items={["Case sent to Grok Bot", "Three jurors vote blind", "Votes are counted"]} step={waited < 8 ? 1 : 2} />
+        <p className="text-sm text-muted">This can take a few minutes{waited > 0 ? ` (${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, "0")} so far)` : ""}. You can keep this open or come back.</p>
+        <button onClick={onInstant} className="btn btn-quiet w-full">Use the instant demo judge instead</button>
+      </div>
+    );
+  }
+  const v = dispute.verdict!;
+  const tally = dispute.tally;
+  return (
+    <div className="space-y-4" aria-live="polite">
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-forest"><ShieldCheck className="h-4 w-4" aria-hidden /> Grok council</span>
+        <span className="rounded-full border border-stone px-2.5 py-0.5 text-xs text-muted">Proposal, not final</span>
+      </div>
+      <div className={`rounded-xl p-4 ${v === "KEPT" ? "bg-mint" : "border border-stone"}`}>
+        <p className={`text-lg font-medium ${v === "KEPT" ? "text-forest" : v === "MISSED" ? "text-danger" : ""}`}>{VERDICT_LABEL[v]}</p>
+        <p className="mt-1 text-sm text-muted">Your goal: {goal} · {usd(stake)} locked · {Math.round((dispute.confidence ?? 0) * 100)}% confident</p>
+        {tally && <p className="mt-2 text-sm">Votes: {tally.KEPT} kept · {tally.MISSED} missed · {tally.NEEDS_MORE_EVIDENCE} need more evidence</p>}
+      </div>
+      {dispute.evidence_requested && <p className="rounded-xl border border-stone p-3 text-sm"><span className="font-medium">The council asks for:</span> {dispute.evidence_requested}</p>}
+      <ul className="space-y-2" aria-label="The three jurors">
+        {(dispute.council ?? []).map((j) => (
+          <li key={j.juror} className="card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-muted">Juror {j.juror} · {LENS_LABEL[j.lens] ?? j.lens}</p>
+                <p className="mt-1 font-medium">{VERDICT_LABEL[j.vote]} <span className="font-normal text-muted">({Math.round(j.confidence * 100)}%)</span></p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${j.coherent ? "bg-mint text-forest" : "border border-stone text-muted"}`}>{j.coherent ? "Coherent" : "Incoherent"}</span>
+            </div>
+            <p className="mt-2 text-sm text-muted">{j.reason}</p>
+          </li>
+        ))}
+      </ul>
+      {(dispute.reasons ?? []).length > 0 && (
+        <ul className="divide-y divide-stone" aria-label="Why">
+          {dispute.reasons!.map((r) => <li key={r} className="py-2 text-sm">{r}</li>)}
+        </ul>
+      )}
+      <p className="text-sm text-muted">Each juror voted for the verdict it expects the other honest jurors to reach. Grok proposes, your group sees it, and only then is the result settled.</p>
+      <button onClick={onClose} className="btn btn-quiet w-full">Close</button>
     </div>
   );
 }
