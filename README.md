@@ -7,7 +7,7 @@ Kept is a commitment app for friend groups. You lock money on your own goal, you
 Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md); the brand rules for agents are in [`docs/branding-kit-agentes.md`](docs/branding-kit-agentes.md).
 
 - **Live demo:** https://house-money-ubc.jairoamayac.workers.dev
-- **Demo group** (open about 12 hours): https://house-money-ubc.jairoamayac.workers.dev/?crew=WUnPRfgz8KsUdFcJBYzPYQM6UpFTKxryKnFQj4NEu8a
+- **Live stack:** program `7nqW…` with Kamino yield, RPC through QuickNode (`/api/rpc`), sign-in with Privy, Grok council routes. `scripts/app-e2e.mts` passes 6/6 against the live URL.
 - **Devnet proof:** [every escrow, pact and payout with explorer links](docs/devnet-proof.md)
 - **Docs:** [why it exists](docs/context.md) · [architecture](docs/architecture.md) · [decisions](docs/decisions.md) · [demo and pitch](docs/demo.md)
 
@@ -45,7 +45,7 @@ No wallet, no seed phrase, no fees: the app covers them.
 - **Money is held by the program, not by us.** Each group has a vault owned by a program address; people hold shares of it. Every transfer is signed by the program; nobody can move someone else's money.
 - **Pacts are accounts.** A pact stores the deadline and minimum; each person's stake and goal are their own accounts; one vote per person is enforced by a vote account.
 - **Payouts are code.** Strict majority of the other participants decides; the 5% moves once to a treasury; winners collect stake plus a pro-rata share of the rest; if nobody kept their word, everyone is refunded.
-- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. People sign in with Google or email through Privy, which creates their account (see [`docs/privy-setup.md`](docs/privy-setup.md)); without a Privy app id the app falls back to a demo key on the device.
+- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. People sign in with their email (one-time code) through Privy, which creates their account (see [`docs/privy-setup.md`](docs/privy-setup.md)); without a Privy app id the app falls back to a demo key on the device.
 
 Code: `programs/house_money/src` (on-chain program; the folder keeps its original name because the deployed program ID depends on it), `src/lib/house-money/solana` (client), `src/components` (screens), `worker/index.ts` (fee sponsor).
 

@@ -1,13 +1,13 @@
-# Sign-in with Privy (Google and email)
+# Sign-in with Privy (email)
 
-Replaces the demo sign-in (a first name plus a key kept in `localStorage`) with Privy: **Continue with Google** or **Continue with email** (one-time code). Privy creates the person's Solana account on first sign-in; the app never shows it, and every action is signed by it. The sponsor in the Worker still pays all fees.
+Replaces the demo sign-in (a first name plus a key kept in `localStorage`) with Privy: **Continue with email** (one-time code). Privy creates the person's Solana account on first sign-in; the app never shows it, and every action is signed by it. The sponsor in the Worker still pays all fees.
 
 If `NEXT_PUBLIC_PRIVY_APP_ID` is **not** set at build time, the app runs the old demo sign-in unchanged. If it is set but Privy doesn't start within 10 s (wrong id, origin not allowed, no network), the app falls back to the demo sign-in too, so the demo never dead-ends on a spinner.
 
 ## How it works
 
 ```
-Continue with Google / email  ->  Privy modal (login)  ->  Privy creates the embedded Solana account
+Continue with email  ->  Privy modal (login)  ->  Privy creates the embedded Solana account
 every action: app builds tx (fee payer = sponsor)
   -> Privy signs as the account (useSignTransaction, no pop-up)      src/components/auth/PrivyGate.tsx
   -> POST /api/sponsor: Worker vets it and adds the fee payer signature   worker/index.ts (unchanged)
@@ -17,13 +17,13 @@ every action: app builds tx (fee payer = sponsor)
 - `src/components/auth/PrivyGate.tsx`: `PrivyProvider`, sign-in screen, `PrivySignerAdapter` (the adapter named in `docs/architecture.md`).
 - `src/lib/house-money/solana/signer.ts`: `OwnerSigner` interface. `LiveClient` only knows this interface; the device-key signer (fallback) and the Privy signer both implement it. The returned signature is only accepted if the signed message is byte-identical to the one we sent.
 - `src/components/auth/AuthGate.tsx`: loads Privy only when an app id is set (lazy chunk), otherwise wraps the app in the local mode.
-- Display name = first name from the Google profile, or the part of the email before `@`. It is written to the same `localStorage` keys as before (`hm.name`, `hm.profile`) plus a new `hm.owner` (which account they belong to), so `setProfile` and the rest of the app are unchanged.
+- Display name = the part of the email before `@`. It is written to the same `localStorage` keys as before (`hm.name`, `hm.profile`) plus a new `hm.owner` (which account they belong to), so `setProfile` and the rest of the app are unchanged.
 - Docs used: [setup](https://docs.privy.io/basics/react/setup), [automatic account creation](https://docs.privy.io/basics/react/advanced/automatic-wallet-creation), [Solana networks](https://docs.privy.io/basics/react/advanced/configuring-solana-networks), [sign a Solana transaction](https://docs.privy.io/wallets/using-wallets/solana/sign-a-transaction), [create a wallet](https://docs.privy.io/wallets/wallets/create/create-a-wallet), [login methods](https://docs.privy.io/basics/get-started/dashboard/configure-login-methods), [allowed domains](https://docs.privy.io/recipes/react/allowed-domains).
 
 ## Setup (one time, in the Privy dashboard: https://dashboard.privy.io)
 
 1. Create an app (type **Web / client-side**). Copy the **App ID** (it looks like `cm...`; it is public, not a secret). Never use the App Secret anywhere in this repo.
-2. **Login methods** (Authentication): turn on **Email** (one-time code) and **Google**. Privy's default Google credentials are enough for the demo.
+2. **Login methods** (Authentication): turn on **Email** (one-time code) and turn **Google** (and every other social login) off. The app only offers email (`loginMethods: ["email"]`).
 3. **Wallets / Embedded wallets**: turn on embedded wallets for **Solana**. (The app also asks Privy to create the account automatically at first sign-in and hides Privy's confirmation pop-ups.)
 4. **Configuration > App settings > Domains > Allowed origins**: add
    - `https://house-money-ubc.jairoamayac.workers.dev` (production demo; add any other production URL or custom domain too)
@@ -55,10 +55,10 @@ Local test: `NEXT_PUBLIC_PRIVY_APP_ID=<app id> npm run dev`.
 
 ## Tested
 
-Locally against this App ID (static build served on `http://localhost:3000`, `/api` proxied to the deployed Worker): email one-time code sign-in, account created, name taken from the email, and the first sponsored transaction (saving the name) signed by the Privy account and confirmed on devnet. Google was not clicked through (needs a Google login).
+Locally against this App ID (static build served on `http://localhost:3000`, `/api` proxied to the deployed Worker): email one-time code sign-in, account created, name taken from the email, and the first sponsored transaction (saving the name) signed by the Privy account and confirmed on devnet.
 
 ## Not covered
 
-- People who used the demo before keep their old on-device account only in the demo mode; a Google/email account starts with a fresh Privy account (no test dollars until they use Apple Pay in the app).
+- People who used the demo before keep their old on-device account only in the demo mode; an email account starts with a fresh Privy account (no test dollars until they use Apple Pay in the app).
 - Apple Pay is still simulated.
-- Account recovery, MFA and a custom Google OAuth app (own branding on the Google screen) are production steps, not in the hackathon build.
+- Account recovery, and MFA are production steps, not in the hackathon build.

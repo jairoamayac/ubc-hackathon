@@ -22,6 +22,10 @@
   "kv_namespaces": [{ "binding": "DISPUTES" }],
   "vars": {
     "RPC_URL": "https://api.devnet.solana.com",
-    "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn"
+    "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn",
+    // Kamino Lend on devnet (public addresses): market, hmUSD reserve, Pyth USDC/USD feed. Locked pots earn here.
+    "KAMINO_MARKET": "G5m4WrATTWncPShWDRkagCM934FYezTRYd2C69sTWkJQ",
+    "KAMINO_RESERVE": "JBiEdktmtJsrrzhmHsfFSZqt2x6SLBjTwm9grDmupGZ6",
+    "KAMINO_ORACLE": "Dpw1EAVrSB1ibxiDQyTAW6Zip3J4Btk2x4SgApQCeFbX"
   }
 }
