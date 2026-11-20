@@ -45,7 +45,7 @@ async function send(ixs: TransactionInstruction[]) {
 }
 
 console.log(`Kamino borrower ${borrower.publicKey.toBase58()} on ${RPC}`);
-if ((await conn.getBalance(borrower.publicKey)) < Number(COLL) + LAMPORTS_PER_SOL) {
+if ((await conn.getBalance(borrower.publicKey)) < Number(COLL) + 0.05 * LAMPORTS_PER_SOL) {
   if (!RPC.includes("127.0.0.1")) throw new Error("fund the borrower with SOL first");
   await conn.confirmTransaction(await conn.requestAirdrop(borrower.publicKey, Number(COLL) + 5 * LAMPORTS_PER_SOL), "confirmed");
 }
