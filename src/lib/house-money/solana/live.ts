@@ -15,6 +15,8 @@ export interface CrewView extends hm.CrewAccount {
   growthPct: number; // yield paid / principal
   yieldPerDay: number; // at the current (demo) rate
   me?: { value: number; principal: number; playable: number; member: hm.MemberAccount };
+  /** Dollars of mine locked on pact goals here (still mine until friends confirm), same formula as the group screen. */
+  locked: number;
 }
 
 export interface Snapshot {
@@ -50,6 +52,8 @@ export interface ChallengeView {
   feeTaken: boolean;
   feeUsd: number;
   forfeitUsd: number;
+  /** UI only: I just locked money here and the network has not shown it yet. */
+  joinedPending?: boolean;
 }
 export interface CrewDetail { crew: PublicKey; people: PersonView[]; bets: BetView[]; challenges: ChallengeView[]; isMember: boolean }
 
@@ -149,11 +153,13 @@ export class LiveClient {
   private async readSnapshot(): Promise<Snapshot> {
     const me = this.owner.publicKey;
     const ata = getAssociatedTokenAddressSync(this.mint, me);
-    const [crewAccs, memberAccs, infos] = await Promise.all([
+    const [crewAccs, memberAccs, entryAccs, infos] = await Promise.all([
       this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: [hm.discFilter(hm.ACCOUNT_DISC.Crew, bs58.encode)] }),
       this.conn.getProgramAccounts(hm.PROGRAM_ID, {
         filters: [hm.discFilter(hm.ACCOUNT_DISC.Member, bs58.encode), { memcmp: { offset: 40, bytes: me.toBase58() } }],
       }),
+      // My pact entries: money locked on goals. Home must count it, or locking looks like losing it.
+      this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.SOCIAL_ACCOUNT_DISC.Entry, 40, me) }),
       this.conn.getMultipleAccountsInfo([ata, hm.configPda(), hm.SOL_USD_FEED]),
     ]);
     const cash = infos[0] ? Number(infos[0].data.readBigUInt64LE(64)) / 1e6 : 0;
@@ -164,7 +170,17 @@ export class LiveClient {
       .filter((a) => !HIDDEN_CREWS.has(a.pubkey.toBase58()))
       .map((a) => hm.decodeCrew(a.pubkey, a.account.data))
       .filter((c) => !c.name.startsWith("[test]")); // crews created by scripts/e2e.mts
-    const vaults = await this.conn.getMultipleAccountsInfo(crews.map((c) => hm.crewVaultPda(c.address)));
+    const myEntries = entryAccs.map((a) => hm.decodeEntry(a.pubkey, a.account.data)).filter((e) => !e.claimed);
+    const challengeKeys = [...new Set(myEntries.map((e) => e.challenge.toBase58()))].map((k) => new PublicKey(k));
+    const lookups = [...crews.map((c) => hm.crewVaultPda(c.address)), ...challengeKeys];
+    const looked: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
+    for (let i = 0; i < lookups.length; i += 100) looked.push(...(await this.conn.getMultipleAccountsInfo(lookups.slice(i, i + 100))));
+    const vaults = looked.slice(0, crews.length);
+    const challenges = new Map<string, hm.ChallengeAccount>();
+    challengeKeys.forEach((k, i) => {
+      const inf = looked[crews.length + i];
+      if (inf) challenges.set(k.toBase58(), hm.decodeChallenge(k, inf.data));
+    });
     const members = new Map(memberAccs.map((a) => {
       const m = hm.decodeMember(a.pubkey, a.account.data);
       return [m.crew.toBase58(), m];
@@ -179,7 +195,16 @@ export class LiveClient {
         vault: hm.toUsd(vaultUnits),
         growthPct: principal > 0 ? (hm.toUsd(c.yieldPaid) / principal) * 100 : 0,
         yieldPerDay: principal * perDayRate,
+        locked: 0,
       };
+      for (const e of myEntries) {
+        const ch = challenges.get(e.challenge.toBase58());
+        if (!ch || !ch.crew.equals(c.address)) continue;
+        const settled = ch.participants > 0 && ch.decided === ch.participants;
+        let units = e.shares;
+        if (settled) units = ch.passedShares === 0n ? e.shares : e.status === hm.ENTRY.PASSED ? hm.commitmentPayout(e.shares, ch.passedShares, ch.failedShares) : 0n;
+        view.locked += hm.toUsd(hm.assetsForShares(units, c.totalShares, vaultUnits));
+      }
       const m = members.get(c.address.toBase58());
       if (m) {
         const value = hm.toUsd(hm.assetsForShares(m.shares, c.totalShares, vaultUnits));
