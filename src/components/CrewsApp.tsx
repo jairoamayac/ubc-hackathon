@@ -3,9 +3,10 @@
 // Screens: onboarding → home (your money, your groups) → group (CrewRoom: pacts, goals, confirmations) → me.
 // Sheets: Apple Pay (simulated), add to a group, take out. Brand: branding kit v0.1 ("Forest").
 import { ArrowLeft, ChevronRight, Home, Loader2, Plus, User, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
+import { memberPda } from "@/lib/house-money/solana/hm";
+import { LiveClient, friendlyError, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
 import { LogoMark } from "./demo/parts";
@@ -18,17 +19,46 @@ type Sheet = null | { id: "applepay"; then?: CrewView } | { id: "deposit"; crew:
 export type Act = (label: string, fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
 
 const YEAR = 31_536_000;
+/** Background refresh. Slow on purpose: the shared public RPC rate-limits, and actions refresh right away anyway. */
+const POLL_MS = 45_000;
+/** How long an unknown group link spins before we say it does not exist. */
+const GROUP_WAIT_MS = 8_000;
+/** How long the first load may spin before we say we are still trying. */
+const LOAD_NOTICE_MS = 7_000;
 
 export default function CrewsApp() {
   const auth = useAuth();
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
   const [client, setClient] = useState<LiveClient | null>(null);
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [rawSnap, setSnap] = useState<Snapshot | null>(null);
+  // Groups I just joined, shown at once; the real data replaces them as soon as it lists me.
+  const [joined, setJoined] = useState<Record<string, number>>({});
   const [view, setView] = useState<View>({ id: "home" });
   const [sheet, setSheet] = useState<Sheet>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
   const [now, setNow] = useState(0);
+  const [trouble, setTrouble] = useState(false); // first load keeps failing (rate limits, offline)
+  const [slowLoad, setSlowLoad] = useState(false); // first load is taking a while
+  const [missing, setMissing] = useState<string | null>(null); // group link we gave up on
+  // After Apple Pay the new balance can lag behind the chain for a few seconds: never show less than we just added.
+  // Only applied while the real balance still equals `from` (the stale value), so it can never double count.
+  const [cashAdj, setCashAdj] = useState<{ from: number; to: number; until: number } | null>(null);
+  const busyRef = useRef(false);
+  const snap = useMemo(() => {
+    if (!rawSnap || !client || Object.keys(joined).length === 0) return rawSnap;
+    const owner = client.owner.publicKey;
+    return {
+      ...rawSnap,
+      crews: rawSnap.crews.map((c) => {
+        const amt = joined[c.address.toBase58()];
+        if (amt === undefined || c.me) return c;
+        const member = { address: memberPda(c.address, owner), crew: c.address, owner, shares: 0n, principal: 0n, openCall: false, callsPlayed: 0, callsWon: 0, joinedAt: Math.floor(rawSnap.now) };
+        return { ...c, members: c.members + 1, me: { value: amt, principal: amt, playable: 0, member, pending: true } };
+      }),
+    };
+  }, [rawSnap, joined, client]);
+  const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (!toast) return;
@@ -37,7 +67,18 @@ export default function CrewsApp() {
   }, [toast]);
 
   useEffect(() => {
-    LiveClient.connect(auth.signer).then(setClient).catch((e: Error) => setToast({ text: e.message, tone: "err" }));
+    let stop = false;
+    const connect = (attempt: number) => {
+      LiveClient.connect(auth.signer).then((c) => !stop && setClient(c)).catch((e) => {
+        if (stop) return;
+        if (attempt < 4) setTimeout(() => connect(attempt + 1), 1500 * 2 ** attempt);
+        else {
+          setTrouble(true);
+          setToast({ text: friendlyError(e), tone: "err" });
+        }
+      });
+    };
+    connect(0);
     // Invite links: /?crew=<address> opens that group so a friend can join in one tap.
     const invited = new URLSearchParams(location.search).get("crew");
     if (invited) {
@@ -48,6 +89,9 @@ export default function CrewsApp() {
         /* not a group link */
       }
     }
+    return () => {
+      stop = true;
+    };
   }, [auth.signer]);
 
   // Names are stored onchain (sponsored) so friends see "Leo", never an address.
@@ -56,24 +100,80 @@ export default function CrewsApp() {
     client.setProfile(name).then(() => localStorage.setItem("hm.profile", name)).catch(() => {});
   }, [client, name]);
 
+  /** One read of everything. Returns false when it failed; background failures keep the last good data on screen. */
   const refresh = useCallback(async () => {
-    if (!client) return;
+    if (!client) return false;
     try {
       setSnap(await client.snapshot());
-    } catch (e) {
-      setToast({ text: (e as Error).message, tone: "err" });
+      setTrouble(false);
+      return true;
+    } catch {
+      setTrouble(true);
+      return false;
     }
   }, [client]);
 
+  // After an action: refresh now and again a few times, because the public RPC can lag behind a confirmed change.
+  const refreshSoon = useCallback(() => {
+    settleTimers.current.forEach(clearTimeout);
+    settleTimers.current = [0, 3000, 8000].map((d) => setTimeout(() => void refresh(), d));
+  }, [refresh]);
+  useEffect(() => {
+    const timers = settleTimers;
+    return () => timers.current.forEach(clearTimeout);
+  }, []);
+
+  // The first load can sit behind retries for a long time (rate limits): tell people after a few seconds.
+  const loaded = !!snap;
+  useEffect(() => {
+    if (loaded) return;
+    const t = setTimeout(() => setSlowLoad(true), LOAD_NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [loaded]);
+
+  // Slow poll with backoff when it fails, paused while the tab is hidden, refreshed when you come back.
   useEffect(() => {
     if (!client) return;
-    const first = setTimeout(refresh, 0);
-    const t = setInterval(refresh, 12_000);
+    let stop = false;
+    let fails = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (stop) return;
+      if (document.hidden) {
+        timer = setTimeout(tick, 5_000);
+        return;
+      }
+      const ok = await refresh();
+      fails = ok ? 0 : fails + 1;
+      if (!stop) timer = setTimeout(tick, ok ? POLL_MS : Math.min(30_000, 2_000 * 2 ** (fails - 1)));
+    };
+    timer = setTimeout(tick, 0);
+    const onVisible = () => {
+      if (document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, 0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearTimeout(first);
-      clearInterval(t);
+      stop = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [client, refresh]);
+
+  // A group link that points nowhere: keep looking briefly, then say so instead of spinning forever.
+  const wantKey = view.id === "group" ? view.key : null;
+  const snapReady = !!snap;
+  const groupFound = !!(wantKey && snap?.crews.some((c) => c.address.toBase58() === wantKey));
+  useEffect(() => {
+    if (!wantKey || !snapReady || groupFound || missing === wantKey) return; // "Try again" clears `missing`, which re-arms this
+    const giveUp = setTimeout(() => setMissing(wantKey), GROUP_WAIT_MS);
+    const poll = setInterval(() => void refresh(), 3_000);
+    return () => {
+      clearTimeout(giveUp);
+      clearInterval(poll);
+    };
+  }, [wantKey, snapReady, groupFound, missing, refresh]);
 
   useEffect(() => {
     const tick = () => setNow(Date.now() / 1000);
@@ -87,19 +187,30 @@ export default function CrewsApp() {
   }, [view]);
 
   const act: Act = async (label, fn, done) => {
+    if (busyRef.current) return false; // one action at a time: no double taps
+    busyRef.current = true;
+    if (label !== "topup") setCashAdj(null); // real balance from here on
     setBusy(label);
     setToast(null);
     try {
       await fn();
-      await refresh();
+      // The change is confirmed: close sheets and say so now, then catch the screen up in the background.
+      refreshSoon();
       if (done) setToast({ text: done, tone: "ok" });
       return true;
     } catch (e) {
-      setToast({ text: (e as Error).message, tone: "err" });
+      setToast({ text: friendlyError(e), tone: "err" });
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(null);
     }
+  };
+
+  const goHome = () => {
+    history.replaceState(null, "", location.pathname);
+    setMissing(null);
+    setView({ id: "home" });
   };
 
   if (name === null) return <Shell />;
@@ -112,7 +223,10 @@ export default function CrewsApp() {
   }
 
   const myGroups = snap?.crews.filter((c) => c.me) ?? [];
-  const inGroups = myGroups.reduce((s, c) => s + liveValue(c, snap!, now), 0);
+  // "In your groups" = free money plus what is locked on pacts (it stays yours until friends confirm).
+  const inGroups = myGroups.reduce((s, c) => s + totalValue(c, snap!, now), 0);
+  const lockedAll = myGroups.reduce((s, c) => s + c.locked, 0);
+  const cash = snap ? (cashAdj && now < cashAdj.until && Math.abs(snap.cash - cashAdj.from) < 1e-9 ? cashAdj.to : snap.cash) : 0;
   const group = view.id === "group" ? snap?.crews.find((c) => c.address.toBase58() === view.key) : undefined;
   const tab = view.id === "me" ? "me" : "home";
 
@@ -132,16 +246,23 @@ export default function CrewsApp() {
       )}
 
       {!snap ? (
-        <div className="flex flex-1 items-center justify-center gap-2 text-muted" role="status">
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Loading
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-muted" role="status">
+          <span className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Loading</span>
+          {(trouble || slowLoad) && (
+            <>
+              <span className="text-sm">We&apos;re having trouble connecting. Still trying.</span>
+              <button onClick={() => (client ? void refresh() : location.reload())} className="btn btn-quiet">Try again</button>
+            </>
+          )}
         </div>
       ) : view.id === "home" ? (
         <Page>
           <Top name={name} />
           <section aria-labelledby="money-title" className="card p-6">
             <h2 id="money-title" className="text-sm text-muted">Your money</h2>
-            <p className="mt-1 text-[40px] font-medium leading-none tracking-tight tabular-nums">{usd(snap.cash + inGroups)}</p>
-            <p className="mt-3 text-sm text-muted">{usd(inGroups)} in your groups · {usd(snap.cash)} ready to use</p>
+            <p className="mt-1 text-[40px] font-medium leading-none tracking-tight tabular-nums">{usd(cash + inGroups)}</p>
+            <p className="mt-3 text-sm text-muted">{usd(inGroups)} in your groups · {usd(cash)} ready to use</p>
+            {lockedAll > 0 && <p className="mt-2"><span className="pill-locked">Locked {usd(lockedAll)}</span></p>}
             <ApplePayButton className="mt-5 w-full" onClick={() => setSheet({ id: "applepay" })} label="Add money with Apple Pay" />
           </section>
 
@@ -165,7 +286,7 @@ export default function CrewsApp() {
                       <span className="block truncate font-medium">{c.name}</span>
                       <span className="block text-sm text-muted">{c.members} {c.members === 1 ? "person" : "people"}</span>
                     </span>
-                    <span className="text-right tabular-nums">{usd(liveValue(c, snap, now))}</span>
+                    <span className="text-right tabular-nums">{usd(totalValue(c, snap, now))}</span>
                     <ChevronRight className="h-5 w-5 text-muted" aria-hidden />
                   </button>
                 </li>
@@ -188,7 +309,8 @@ export default function CrewsApp() {
           <h1 className="text-[32px] font-medium tracking-tight">{name}</h1>
           <div className="card space-y-3 p-5">
             <Row k="In your groups" v={usd(inGroups)} />
-            <Row k="Ready to use" v={usd(snap.cash)} />
+            {lockedAll > 0 && <Row k="Locked on pacts" v={usd(lockedAll)} />}
+            <Row k="Ready to use" v={usd(cash)} />
             <Row k="Groups" v={String(myGroups.length)} />
           </div>
           <section aria-labelledby="safe-title" className="card space-y-2 p-5 text-sm text-muted">
@@ -220,16 +342,25 @@ export default function CrewsApp() {
           busy={busy}
           value={liveValue(group, snap, now)}
           act={act}
-          onBack={() => {
-            history.replaceState(null, "", location.pathname);
-            setView({ id: "home" });
-          }}
-          onDeposit={() => setSheet(snap.cash < 0.01 ? { id: "applepay", then: group } : { id: "deposit", crew: group })}
+          onBack={goHome}
+          onDeposit={() => setSheet(cash < 0.01 ? { id: "applepay", then: group } : { id: "deposit", crew: group })}
           onWithdraw={() => setSheet({ id: "withdraw", crew: group })}
         />
+      ) : wantKey !== null && missing === wantKey ? (
+        <Page>
+          <BackButton onClick={goHome} />
+          <div className="card space-y-3 p-5" role="alert">
+            <h1 className="text-xl font-medium">We couldn&apos;t find this group</h1>
+            <p className="text-sm text-muted">The link may be wrong, or the group isn&apos;t there anymore. Ask your friend to send the invite again.</p>
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button onClick={goHome} className="btn btn-primary">Go to Home</button>
+              <button onClick={() => { setMissing(null); void refresh(); }} className="btn btn-quiet">Try again</button>
+            </div>
+          </div>
+        </Page>
       ) : (
         <Page>
-          <BackButton onClick={() => setView({ id: "home" })} />
+          <BackButton onClick={goHome} />
           <p className="flex items-center gap-2 text-muted" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Opening the group</p>
         </Page>
       )}
@@ -252,15 +383,24 @@ export default function CrewsApp() {
         >
           {sheet.id === "applepay" && (
             <ApplePaySheet busy={busy === "topup"} onPay={async (amt) => {
+              const shown = cash;
               const ok = await act("topup", () => client!.topUp(amt), `${usd(amt)} added.`);
+              if (ok) setCashAdj({ from: snap.cash, to: shown + amt, until: Date.now() / 1000 + 25 });
               if (ok) setSheet(sheet.then ? { id: "deposit", crew: sheet.then } : null);
             }} />
           )}
           {sheet.id === "deposit" && (
-            <AmountForm max={snap.cash} cta={sheet.crew.me ? "Add money" : "Join group"} busy={busy === "deposit"}
-              hint={`You have ${usd(snap.cash)} ready to use. Money in a group stays yours until you lock it on a goal.`}
+            <AmountForm max={cash} cta={sheet.crew.me ? "Add money" : "Join group"} busy={busy === "deposit"}
+              hint={`You have ${usd(cash)} ready to use. Money in a group stays yours until you lock it on a goal.`}
               onSubmit={async (amt) => {
-                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} added to ${sheet.crew.name}.`)) setSheet(null);
+                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} added to ${sheet.crew.name}.`)) {
+                  if (!sheet.crew.me) {
+                    // Joined: show the group as mine right away (and the money moved) while the network catches up.
+                    setJoined((j) => ({ ...j, [sheet.crew.address.toBase58()]: amt }));
+                    setCashAdj({ from: snap.cash, to: Math.max(0, cash - amt), until: Date.now() / 1000 + 25 });
+                  }
+                  setSheet(null);
+                }
               }} />
           )}
           {sheet.id === "withdraw" && sheet.crew.me && (
@@ -297,6 +437,10 @@ function pending(c: CrewView, snap: Snapshot, now: number) {
   const elapsed = Math.max(0, now - c.lastAccrual);
   return (principal * (snap.config.apyBps / 10_000) * snap.config.timeWarp * elapsed) / YEAR;
 }
+/** Free money plus money locked on pacts: the same total the group screen shows. */
+export function totalValue(c: CrewView, snap: Snapshot, now: number) {
+  return liveValue(c, snap, now) + c.locked;
+}
 /** Your free money in a group, including what accrues every second. */
 export function liveValue(c: CrewView, snap: Snapshot, now: number) {
   if (!c.me) return 0;
@@ -329,11 +473,22 @@ function Row({ k, v }: { k: string; v: string }) {
   return <p className="flex justify-between"><span className="text-muted">{k}</span><span className="tabular-nums">{v}</span></p>;
 }
 
+/** Apple logo (Simple Icons, CC0), drawn in the text colour so it matches the button. */
+function AppleMark({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden focusable="false" className={`-mt-0.5 ml-1 ${className}`}>
+      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
+    </svg>
+  );
+}
+
 export function ApplePayButton({ onClick, label, className = "", disabled }: { onClick: () => void; label: string; className?: string; disabled?: boolean }) {
   return (
     <button onClick={onClick} disabled={disabled} aria-label={label} className={`btn bg-black py-4 text-lg text-white ${className}`}>
       <span aria-hidden>{label.startsWith("Pay") ? "Pay with" : "Add money with"}</span>
-      <span aria-hidden className="font-medium"> Pay</span>
+      <span aria-hidden className="inline-flex items-center gap-1 font-medium">
+        <AppleMark className="h-[1.15em] w-[1.15em]" />Pay
+      </span>
     </button>
   );
 }

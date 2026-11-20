@@ -5,7 +5,7 @@
 // the friends who kept theirs get the rest after a small platform fee (see FEE_PERCENT in lib/brand).
 // Everything here is sponsored, with no wallet in sight.
 import { Check, Clock, Link2, Loader2, Plus, Sparkles, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import type { ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "@/lib/house-money/solana/live";
 import * as hm from "@/lib/house-money/solana/hm";
@@ -20,6 +20,7 @@ import { usd } from "@/lib/format";
 type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView } | { id: "verify"; pact: ChallengeView };
 
 const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
+const DETAIL_POLL_MS = 30_000;
 const DURATIONS: [string, number][] = [["2 minutes", 2], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["3 days", 4320], ["1 week", 10080]];
 
 export function CrewRoom(props: {
@@ -40,39 +41,95 @@ export function CrewRoom(props: {
   const [celebrate, setCelebrate] = useState(0);
   const [copied, setCopied] = useState(false);
 
+  const [trouble, setTrouble] = useState(false); // pacts keep failing to load
+  // What the person just did, shown right away. These only ever go one way (collected, answered, joined),
+  // so they cannot double count: as soon as fresh data shows the same thing, it wins.
+  // Pacts I just started: shown at once, replaced by the real one as soon as the network lists it.
+  const [created, setCreated] = useState<ChallengeView[]>([]);
+  const [done, setDone] = useState<{ claimed: string[]; voted: string[]; joined: string[] }>({ claimed: [], voted: [], joined: [] });
+  const reloadTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   const load = useCallback(async () => {
     try {
       setDetail(await client.crewDetail(crew.address));
+      setTrouble(false);
+      return true;
     } catch {
-      /* the parent's refresh shows network errors */
+      setTrouble(true);
+      return false;
     }
   }, [client, crew.address]);
 
+  // Slow poll, backing off when it fails, paused while the tab is hidden.
   useEffect(() => {
-    const first = setTimeout(load, 0);
-    const t = setInterval(load, 8_000);
+    let stop = false;
+    let fails = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (stop) return;
+      if (document.hidden) {
+        timer = setTimeout(tick, 5_000);
+        return;
+      }
+      const ok = await load();
+      fails = ok ? 0 : fails + 1;
+      if (!stop) timer = setTimeout(tick, ok ? DETAIL_POLL_MS : Math.min(30_000, 2_000 * 2 ** (fails - 1)));
+    };
+    timer = setTimeout(tick, 0);
+    const onVisible = () => {
+      if (document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, 0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearTimeout(first);
-      clearInterval(t);
+      stop = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
+  useEffect(() => {
+    const timers = reloadTimers;
+    return () => timers.current.forEach(clearTimeout);
+  }, []);
 
+  // After an action: show it now, then re-read a few times while the network catches up.
   const run: Act = async (label, fn, done) => {
     const ok = await act(label, fn, done);
-    await load();
+    if (ok) {
+      reloadTimers.current.forEach(clearTimeout);
+      reloadTimers.current = [0, 3000, 8000].map((d) => setTimeout(() => void load(), d));
+    }
     return ok;
   };
 
+  // Fresh data plus what was just done (see above).
+  const shown = useMemo<CrewDetail | null>(() => {
+    if (!detail) return null;
+    const listed = new Set(detail.challenges.map((c) => c.challenge.address.toBase58()));
+    const fresh = created.filter((c) => !listed.has(c.challenge.address.toBase58()));
+    return {
+      ...detail,
+      challenges: [...fresh, ...detail.challenges].map((c) => {
+        const addr = c.challenge.address.toBase58();
+        let v = c;
+        if (done.joined.includes(addr) && !v.mine) v = { ...v, joinedPending: true };
+        if (done.claimed.includes(addr) && v.mine && !v.mine.entry.claimed) v = { ...v, mine: { ...v.mine, entry: { ...v.mine.entry, claimed: true } } };
+        const entries = v.entries.map((e) => {
+          const key = `${addr}:${e.entry.owner.toBase58()}`;
+          if (!done.voted.includes(key) || e.myVote) return e;
+          return { ...e, myVote: 1, entry: { ...e.entry, passVotes: e.entry.passVotes + 1 } };
+        });
+        return entries.some((e, i) => e !== v.entries[i]) ? { ...v, entries } : v;
+      }),
+    };
+  }, [detail, done, created]);
+
   const me = crew.me;
-  // Money locked on goals still counts as yours until your friends confirm.
-  const locked = detail
-    ? detail.challenges.reduce((s, c) => {
-        if (!c.mine || c.mine.entry.claimed) return s;
-        const settled = c.challenge.participants > 0 && c.challenge.decided === c.challenge.participants;
-        return s + (settled ? c.mine.payoutUsd : c.mine.usd);
-      }, 0)
-    : 0;
-  const pacts = detail?.challenges ?? [];
+  // Money locked on goals still counts as yours until your friends confirm. It comes from the same read as the
+  // free money (snapshot), so the total never dips while one of the two catches up.
+  const locked = crew.locked;
+  const pacts = shown?.challenges ?? [];
 
   const invite = async () => {
     const url = `${location.origin}/?crew=${crew.address.toBase58()}`;
@@ -107,9 +164,9 @@ export function CrewRoom(props: {
         <h2 id="mine-title" className="text-sm text-muted">{me ? "Your money here" : "In this group"}</h2>
         <p className="mt-1 text-[36px] font-medium leading-none tracking-tight tabular-nums">{usd(me ? props.value + locked : crew.vault)}</p>
         {me && locked > 0 && <p className="mt-3"><span className="pill-locked">Locked {usd(locked)}</span></p>}
-        {detail && detail.people.length > 0 && (
+        {shown && shown.people.length > 0 && (
           <ul className="mt-4 flex flex-wrap gap-2" aria-label="People in this group">
-            {detail.people.map((p) => (
+            {shown.people.map((p) => (
               <li key={p.owner.toBase58()} className={`rounded-full border px-3 py-1 text-sm ${p.isMe ? "border-forest text-forest" : "border-stone"}`}>{p.name}</li>
             ))}
           </ul>
@@ -117,7 +174,7 @@ export function CrewRoom(props: {
         {me ? (
           <div className="mt-5 grid grid-cols-2 gap-3">
             <button onClick={props.onDeposit} className="btn btn-primary">Add money</button>
-            <button onClick={props.onWithdraw} className="btn btn-quiet">Take out</button>
+            <button onClick={props.onWithdraw} disabled={me.pending} className="btn btn-quiet disabled:opacity-45">Take out</button>
           </div>
         ) : (
           <button onClick={props.onDeposit} className="btn btn-primary mt-5 w-full">Join with money</button>
@@ -133,8 +190,16 @@ export function CrewRoom(props: {
         )}
       </div>
 
-      {!detail ? (
-        <p className="flex items-center gap-2 text-muted" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading pacts</p>
+      {!shown ? (
+        <div className="space-y-2" role="status">
+          <p className="flex items-center gap-2 text-muted"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading pacts</p>
+          {trouble && (
+            <>
+              <p className="text-sm text-muted">We&apos;re having trouble connecting. Still trying.</p>
+              <button onClick={() => void load()} className="btn btn-quiet">Try again</button>
+            </>
+          )}
+        </div>
       ) : pacts.length === 0 ? (
         <div className="card p-5">
           <p className="font-medium">Make the first promise.</p>
@@ -147,13 +212,17 @@ export function CrewRoom(props: {
             <li key={c.challenge.address.toBase58()}>
               <PactCard c={c} now={now} isMember={!!me} busy={busy}
                 onJoin={() => setSheet({ id: "join", pact: c })}
-                onConfirm={(owner, kept) => run("confirm", () => client.voteEntry(crew.address, c.challenge.address, owner, kept), "Thanks. Your answer is in.")}
+                onConfirm={async (owner, kept) => {
+                  const ok = await run("confirm", () => client.voteEntry(crew.address, c.challenge.address, owner, kept), "Thanks. Your answer is in.");
+                  if (ok) setDone((d) => ({ ...d, voted: [...d.voted, `${c.challenge.address.toBase58()}:${owner.toBase58()}`] }));
+                }}
                 onAppeal={() => setSheet({ id: "appeal", pact: c })}
                 onVerify={() => setSheet({ id: "verify", pact: c })}
                 onCollect={async () => {
                   const won = c.mine && c.mine.payoutUsd > c.mine.usd;
                   const ok = await run("collect", () => client.claimChallenge(crew.address, c.challenge.address, c.feeTaken),
                     c.mine && c.mine.payoutUsd > 0 ? `${usd(c.mine.payoutUsd)} is back in your money.` : "Settled.");
+                  if (ok) setDone((d) => ({ ...d, claimed: [...d.claimed, c.challenge.address.toBase58()] }));
                   if (ok && won) setCelebrate((x) => x + 1);
                 }} />
             </li>
@@ -166,17 +235,33 @@ export function CrewRoom(props: {
           title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : sheet.id === "verify" ? "Verify with Grok" : "Disagree with a result"}
           onClose={() => setSheet(null)}
         >
-          {sheet.id === "start" && (
+          {sheet.id === "start" && crew.members < 2 && (
+            <div className="space-y-4">
+              <p className="font-medium">A pact needs at least two people.</p>
+              <p className="text-sm text-muted">You&apos;re the only one in this group. Invite a friend first; once they join, you can lock money on your goal together.</p>
+              <button onClick={invite} className="btn btn-primary w-full"><Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite a friend"}</button>
+            </div>
+          )}
+          {sheet.id === "start" && crew.members >= 2 && (
             <GoalForm free={props.value} min={1} withPactSettings busy={busy === "start"} cta="Lock"
+              note="Heads up: your friends have to lock money on this pact too. If you are the only one in when time is up, nobody can confirm it and your money stays locked."
               onSubmit={async ({ goal, stake, minutes, minStake }) => {
-                if (await run("start", () => client.startCommitment(crew.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, stake),
-                  `Locked ${usd(stake)} on your goal. Invite the group to join.`)) setSheet(null);
+                const id = BigInt(Date.now());
+                const title = `Pact: ${goal}`.slice(0, 80);
+                if (await run("start", () => client.startCommitment(crew.address, title, minStake, minutes, goal, stake, id),
+                  `Locked ${usd(stake)} on your goal. Invite the group to join.`)) {
+                  setCreated((l) => [...l, optimisticPact(client, crew.address, id, title, goal, stake, minStake, minutes)]);
+                  setSheet(null);
+                }
               }} />
           )}
           {sheet.id === "join" && (
             <GoalForm free={props.value} min={sheet.pact.stakeUsd} busy={busy === "join"} cta="Lock"
               onSubmit={async ({ goal, stake }) => {
-                if (await run("join", () => client.joinWithGoal(crew.address, sheet.pact.challenge.address, goal, stake), `Locked ${usd(stake)} on your goal.`)) setSheet(null);
+                if (await run("join", () => client.joinWithGoal(crew.address, sheet.pact.challenge.address, goal, stake), `Locked ${usd(stake)} on your goal.`)) {
+                  setDone((d) => ({ ...d, joined: [...d.joined, sheet.pact.challenge.address.toBase58()] }));
+                  setSheet(null);
+                }
               }} />
           )}
           {sheet.id === "appeal" && <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)} />}
@@ -188,6 +273,24 @@ export function CrewRoom(props: {
 }
 
 // ---------------------------------------------------------------- pieces
+
+/** What a pact I just started looks like, before the network lists it (one person in, nothing decided). */
+function optimisticPact(client: LiveClient, crew: PublicKey, id: bigint, title: string, goal: string, stake: number, minStake: number, minutes: number): ChallengeView {
+  const me = client.owner.publicKey;
+  const address = hm.challengePda(crew, id);
+  const entry: hm.EntryAccount = {
+    address: hm.entryPda(address, me), challenge: address, owner: me, shares: hm.fromUsd(stake), passVotes: 0, failVotes: 0, status: hm.ENTRY.PENDING, claimed: false,
+  };
+  const view = { entry, name: "You", isMe: true, goal, stakeUsd: stake };
+  return {
+    challenge: {
+      address, crew, creator: me, challengeId: id, title, stake: hm.fromUsd(minStake), endsAt: Math.floor(Date.now() / 1000) + Math.round(minutes * 60),
+      participants: 1, decided: 0, passedShares: 0n, failedShares: 0n,
+    },
+    creatorName: "You", stakeUsd: minStake, potUsd: stake, entries: [view], mine: { ...view, payoutUsd: 0, usd: stake },
+    feeTaken: false, feeUsd: 0, forfeitUsd: 0,
+  };
+}
 
 function left(seconds: number) {
   if (seconds <= 0) return "Time is up";
@@ -205,6 +308,8 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onVerif
   const open = now < ch.endsAt;
   const settled = ch.participants > 0 && ch.decided === ch.participants;
   const amIn = !!c.mine;
+  const joining = !!c.joinedPending; // just locked, waiting for the network to show it
+  const alone = ch.participants < 2; // nobody else can confirm a pact with one person in it
   const need = Math.floor(Math.max(1, ch.participants - 1) / 2) + 1;
   const status = open ? "Open" : settled ? "Done" : "Confirming";
   const lost = c.entries.filter((e) => e.entry.status === hm.ENTRY.FAILED);
@@ -249,7 +354,7 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onVerif
               {!open && st === hm.ENTRY.PENDING && (
                 <div className="mt-2">
                   {e.isMe ? (
-                    <p className="text-sm text-muted">Your friends are confirming.</p>
+                    <p className="text-sm text-muted">{alone ? "Only you put money in, so nobody else can confirm this pact." : "Your friends are confirming."}</p>
                   ) : e.myVote ? (
                     <p className="text-sm text-muted">You answered. {e.entry.passVotes + e.entry.failVotes} of {need} answers needed.</p>
                   ) : amIn ? (
@@ -268,7 +373,8 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onVerif
         {c.entries.length === 0 && <li className="py-2 text-sm text-muted">Nobody has locked money yet.</li>}
       </ul>
 
-      {open && isMember && !amIn && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
+      {open && isMember && !amIn && joining && <p role="status" className="flex items-center justify-center gap-2 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Locking your money</p>}
+      {open && isMember && !amIn && !joining && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
 
       {!settled && amIn && <button onClick={onVerify} className="min-h-11 w-full text-sm text-muted underline">Public goal, like X followers? Verify with Grok</button>}
 
@@ -335,8 +441,8 @@ function ResultBreakdown({ c, lostCount, keptCount }: { c: ChallengeView; lostCo
   );
 }
 
-function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
-  free: number; min: number; busy: boolean; cta: string; withPactSettings?: boolean;
+function GoalForm({ free, min, busy, cta, withPactSettings, note, onSubmit }: {
+  free: number; min: number; busy: boolean; cta: string; withPactSettings?: boolean; note?: string;
   onSubmit: (v: { goal: string; stake: number; minutes: number; minStake: number }) => void;
 }) {
   const [goal, setGoal] = useState("");
@@ -407,6 +513,7 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
         <p><span className="font-medium text-forest">Keep your word:</span> your {usd(stake)} comes back, plus a share of what others leave.</p>
         <p><span className="font-medium text-danger">Walk away:</span> you lose {usd(stake)}. {KEEPERS_PERCENT}% goes to the friends who kept theirs, {FEE_PERCENT}% to {PROJECT_NAME}.</p>
         <p className="text-muted">It stays locked until the people who put money in confirm the result.</p>
+        {note && <p className="font-medium">{note}</p>}
       </div>
       <button type="submit" disabled={blocked} className="btn btn-primary w-full py-4 text-lg">
         {tooMuch ? "Add money to this group first" : busy ? "Locking" : `${cta} ${usd(stake)}`}
