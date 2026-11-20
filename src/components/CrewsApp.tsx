@@ -9,6 +9,7 @@ import { PublicKey } from "@solana/web3.js";
 import { LiveClient, type ChallengeView, type CrewDetail, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { usd } from "@/lib/format";
+import { ENTRY } from "@/lib/house-money/solana/hm";
 import { Onboarding } from "./Onboarding";
 import { GroupScreen, GoalScreen, ResultsScreen, VoteScreen } from "./CrewRoom";
 import { NewGoal } from "./kept/NewGoal";
@@ -456,13 +457,17 @@ function Me({ name, cash, free, goals, groups, onAddFunds, onWithdraw, onRename 
               const st = g.phase === "settled" ? entryState(g.me, "settled") : null;
               const collected = g.me.entry.claimed;
               const delta = collected ? g.me.payoutUsd - g.me.usd : -g.me.usd;
+              // A refund nets $0: say the stake came back instead of "+$0.00". No dollar figure, because shares
+              // are priced at today's pot, which drifts once people take their money out.
+              const refunded = collected && st !== "missed" && (g.me.entry.status === ENTRY.REFUNDED || g.v.challenge.passedShares === 0n);
+              const label = !collected ? "Locked" : st === "missed" ? "Missed" : refunded ? "Refunded" : "Collected";
               return (
                 <li key={g.me.entry.address.toBase58()} className="flex items-center justify-between gap-3 py-3">
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{collected ? (st === "missed" ? "Missed" : "Collected") : "Locked"} · {g.me.goal ?? roundTitle(g.v)}</span>
+                    <span className="block truncate text-sm font-medium">{label} · {g.me.goal ?? roundTitle(g.v)}</span>
                     <span className="block text-xs text-muted">{g.crewName}</span>
                   </span>
-                  <span className={`mono shrink-0 text-sm ${delta > 0 ? "text-forest" : ""}`}>{usd(delta, { sign: true })}</span>
+                  <span className={`mono shrink-0 text-sm ${delta > 0 ? "text-forest" : ""}`}>{refunded ? "Stake back" : usd(delta, { sign: true })}</span>
                 </li>
               );
             })}
