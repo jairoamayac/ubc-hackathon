@@ -56,11 +56,18 @@ export default function CrewsApp() {
   }, [toast]);
 
   // The signed-in account (Privy) signs; without one, the demo key kept on this device. Retries with backoff.
+  const connectGen = useRef(0);
   const connect = useCallback(() => {
+    // A new account (or a retry) supersedes any connection still in flight, and never shows the old data.
+    const gen = ++connectGen.current;
     setConnectErr(null);
+    setClient(null);
+    setSnap(null);
+    setDetails({});
     let attempt = 0;
     const tryOnce = () => {
-      LiveClient.connect(auth.signer).then(setClient).catch((e) => {
+      LiveClient.connect(auth.signer).then((c) => gen === connectGen.current && setClient(c)).catch((e) => {
+        if (gen !== connectGen.current) return;
         if (attempt++ < 3) setTimeout(tryOnce, 1500 * 2 ** attempt);
         else setConnectErr(friendlyError(e));
       });
@@ -196,6 +203,8 @@ export default function CrewsApp() {
       if (done) setToast({ text: done, tone: "ok" });
       return true;
     } catch (e) {
+      // It may have gone through anyway (a slow confirmation): catch the screen up before anyone retries.
+      refreshSoon();
       setToast({ text: friendlyError(e), tone: "err" });
       return false;
     } finally {
@@ -251,7 +260,7 @@ export default function CrewsApp() {
       onNewGroup={() => go({ id: "newGroup" })}
       onAddFunds={() => setSheet({ id: "addFunds" })} />;
   } else if (route.id === "tab" && route.tab === "me") {
-    body = <Me name={name} cash={snap.cash} free={free} goals={goals} groups={myGroups.length}
+    body = <Me name={name} cash={snap.cash} free={free} goals={goals} groups={myGroups.length} onSignOut={auth.signOut ? () => void auth.signOut!() : undefined}
       onAddFunds={() => setSheet({ id: "addFunds" })} onWithdraw={() => setSheet({ id: "withdraw" })} onRename={() => setName("")} />;
   } else if (route.id === "tab" && route.tab === "group") {
     const crew = activeKey ? crewOf(activeKey) : undefined;
@@ -466,8 +475,9 @@ function Home({ name, cash, free, onLine, goals, groups, details, now, onGoal, o
   );
 }
 
-function Me({ name, cash, free, goals, groups, onAddFunds, onWithdraw, onRename }: {
+function Me({ name, cash, free, goals, groups, onAddFunds, onWithdraw, onRename, onSignOut }: {
   name: string; cash: number; free: number; goals: MyGoal[]; groups: number; onAddFunds: () => void; onWithdraw: () => void; onRename: () => void;
+  onSignOut?: () => void;
 }) {
   const decided = goals.filter((g) => g.phase === "settled");
   const kept = decided.filter((g) => entryState(g.me, "settled") === "kept").length;
@@ -534,6 +544,7 @@ function Me({ name, cash, free, goals, groups, onAddFunds, onWithdraw, onRename 
         <p>When someone misses, {KEEPERS_PERCENT}% of their stake goes to the friends who kept their word and {FEE_PERCENT}% to {PROJECT_NAME}.</p>
       </section>
       <button onClick={onRename} className="btn btn-quiet">Change name</button>
+      {onSignOut && <button onClick={onSignOut} className="btn btn-quiet">Sign out</button>}
     </Page>
   );
 }

@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChallengeView } from "@/lib/house-money/solana/live";
 import { usd } from "@/lib/format";
 import type { DisputeView } from "@/lib/grok";
-import { AppealError, getDispute, shrinkImage, startAppeal } from "@/lib/grok-client";
+import { AppealError, getDispute, shrinkImage, startAppeal, GROK_GAVE_UP, keepPolling } from "@/lib/grok-client";
 import { Check3, Icon3D } from "./demo/parts";
 
 type Reason = { label: string; ok: boolean; detail: string };
@@ -102,8 +102,10 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
         if (!alive.current) return;
         setDispute(d);
         if (d.status === "pending") poll(id, startedAt);
-      } catch {
-        if (alive.current) poll(id, startedAt); // a lost request is not a lost verdict
+      } catch (e) {
+        if (!alive.current) return;
+        if (keepPolling(e, startedAt)) poll(id, startedAt); // a lost request is not a lost verdict
+        else setLiveError(e instanceof AppealError ? e.message : GROK_GAVE_UP);
       }
     }, 5000);
   };

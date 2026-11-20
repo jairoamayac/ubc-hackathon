@@ -6,7 +6,7 @@ import { Loader2, MessageCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChallengeView } from "@/lib/house-money/solana/live";
 import type { GroupMember, GroupMessage, JobView } from "@/lib/grok";
-import { AppealError, askGroup, getGroupJob } from "@/lib/grok-client";
+import { AppealError, askGroup, getGroupJob, GROK_GAVE_UP, keepPolling } from "@/lib/grok-client";
 
 const STATUS = ["pending", "kept", "missed"] as const;
 
@@ -24,16 +24,21 @@ export function GrokGroup({ groupId, pacts }: { groupId: string; pacts: Challeng
       status: STATUS[e.entry.status] ?? "pending", last_proof_at: null,
     })));
 
-  const poll = (id: string) => {
+  const poll = (id: string, startedAt: number) => {
     timer.current = setTimeout(async () => {
       if (!alive.current) return;
       try {
         const j = await getGroupJob(id);
         if (!alive.current) return;
         setJob(j);
-        if (j.status === "pending") poll(id);
-      } catch {
-        if (alive.current) poll(id);
+        if (j.status === "pending") {
+          if (Date.now() - startedAt > 10 * 60_000) setError(GROK_GAVE_UP);
+          else poll(id, startedAt);
+        }
+      } catch (e) {
+        if (!alive.current) return;
+        if (keepPolling(e, startedAt)) poll(id, startedAt);
+        else setError(e instanceof AppealError ? e.message : GROK_GAVE_UP);
       }
     }, 5000);
   };
@@ -44,7 +49,7 @@ export function GrokGroup({ groupId, pacts }: { groupId: string; pacts: Challeng
     try {
       const { job_id } = await askGroup({ group_id: groupId, members });
       setJob({ job_id, kind: "group", status: "pending", created_at: Date.now() });
-      poll(job_id);
+      poll(job_id, Date.now());
     } catch (e) {
       setError(e instanceof AppealError ? e.message : "Something went wrong.");
     } finally {

@@ -15,8 +15,19 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     throw new AppealError("Could not reach the server.", 0);
   }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new AppealError(data.error ?? `Request failed (${res.status}).`, res.status);
+  if (!res.ok) {
+    // Our own plain messages pass through; anything technical (upstream HTTP codes, timeouts) does not.
+    const msg = data.error && !/HTTP \d|status|timed? ?out|fetch|undefined|null/i.test(data.error) ? data.error : "Grok couldn't answer right now. Try again later.";
+    throw new AppealError(msg, res.status);
+  }
   return data;
+}
+
+/** Polling stops when the server says the request is gone or bad (4xx), or after 10 minutes. */
+export const GROK_GAVE_UP = "Grok is taking too long. Try again later.";
+export function keepPolling(e: unknown, startedAt: number): boolean {
+  if (Date.now() - startedAt > 10 * 60_000) return false;
+  return !(e instanceof AppealError && e.status >= 400 && e.status < 500);
 }
 
 export const startAppeal = (req: AppealRequest) => call<{ dispute_id: string; status: "pending" }>("/api/appeal", { method: "POST", body: JSON.stringify(req) });

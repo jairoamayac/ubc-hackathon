@@ -198,6 +198,9 @@ pub mod house_money {
 
     /// Tryhard mode: call SOL up or down until `expires_at`, staking only your yield.
     pub fn open_call(ctx: Context<OpenCall>, direction: u8, boost: u8, stake: u64) -> Result<()> {
+        // Tryhard is off: a stale entry price and a settle-whenever exit made it a free option paid from the
+        // house vault, which also holds the platform fees (audit H3). The app never used it.
+        require!(false, HmError::Disabled);
         let cfg = &ctx.accounts.config;
         require!(direction <= 1, HmError::BadDirection);
         require!(boost >= 1 && boost <= cfg.max_boost, HmError::BadBoost);
@@ -857,6 +860,8 @@ pub enum HmError {
     StakeTooLow,
     #[msg("Bring the pot back from Kamino first (kamino_redeem in the same transaction)")]
     KaminoNotRedeemed,
+    #[msg("This feature is turned off.")]
+    Disabled,
 }
 
 #[cfg(test)]

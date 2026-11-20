@@ -14,7 +14,7 @@ import {
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { MAX_CU_PRICE as HM_MAX_CU_PRICE, PROGRAM_ID, SOCIAL_PAYER_IXS, priorityIxs } from "../src/lib/house-money/solana/hm";
+import { KEPT_IX, MAX_CU_PRICE as HM_MAX_CU_PRICE, PROGRAM_ID, priorityIxs } from "../src/lib/house-money/solana/hm";
 import { handleGrok, type GrokEnv } from "./grok";
 
 interface Env extends GrokEnv {
@@ -28,22 +28,24 @@ interface Env extends GrokEnv {
   KAMINO_MARKET?: string;
   KAMINO_RESERVE?: string;
   KAMINO_ORACLE?: string;
+  /** Cloudflare rate limiters (wrangler.jsonc "ratelimits"). Missing in a binding-less dev run: no limit. */
+  SPONSOR_LIMIT?: RateLimiter;
+  TOPUP_LIMIT?: RateLimiter;
+  RPC_LIMIT?: RateLimiter;
 }
+interface RateLimiter { limit(o: { key: string }): Promise<{ success: boolean }> }
 
 const COMPUTE_BUDGET = new PublicKey("ComputeBudget111111111111111111111111111111");
-// Instructions where account #0 only pays rent (the program never moves its tokens):
-// create_crew, join_crew, open_call, settle_call, plus the social ones (profiles, bets, challenges, votes).
-const PAYER_IXS = new Set([
-  "176,106,87,57,118,114,236,48",
-  "86,114,155,5,187,60,196,223",
-  "153,26,89,45,252,243,183,62",
-  "58,230,6,58,104,245,154,227",
-  ...SOCIAL_PAYER_IXS,
-  // kamino_supply / kamino_redeem: the sponsor is the operator. The program only lets these move a pot's
-  // own dollars between its vault and cTokens owned by the pot's PDA, never anywhere else.
-  "145,46,142,2,176,57,162,159",
-  "143,225,240,130,123,5,160,84",
-]);
+// Only the Kept instructions the app sends get sponsored (no old calls or bets: they were rent sinks).
+const disc = (name: keyof typeof KEPT_IX) => KEPT_IX[name].join(",");
+const APP_IXS = new Set((["create_crew", "join_crew", "deposit", "withdraw", "set_profile", "create_challenge", "join_challenge",
+  "join_with_goal", "vote_entry", "finalize_entry", "take_fee", "claim_challenge", "kamino_supply", "kamino_redeem"] as const).map(disc));
+// Of those, where account #0 may be the sponsor: it only pays rent (the program never moves its tokens), or,
+// for kamino_supply/redeem, it is the operator, which can only move a pot's own dollars between its vault
+// and cTokens owned by the pot's PDA. The supply must be "the whole vault" (amount 0), as the app sends it.
+const PAYER_IXS = new Set((["create_crew", "join_crew", "set_profile", "create_challenge", "join_challenge", "vote_entry",
+  "join_with_goal", "take_fee", "kamino_supply", "kamino_redeem"] as const).map(disc));
+const KAMINO_SUPPLY = disc("kamino_supply");
 const KLEND = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
 const KLEND_REFRESH_RESERVE = "2,218,138,235,79,201,25,102";
 const MAX_TOPUP_USD = 500;
@@ -61,6 +63,8 @@ const RPC_METHODS = new Set([
 ]);
 const MAX_RPC_BODY = 64 * 1024;
 const MAX_RPC_BATCH = 20;
+/** Program-wide scans per request (the app sends one per request). */
+const MAX_RPC_SCANS = 2;
 const RPC_TIMEOUT_MS = 8_000;
 
 /** Why a JSON-RPC call may not go through the proxy, or null if it may. */
@@ -72,6 +76,30 @@ function vetRpc(call: unknown): string | null {
   if (c.method === "getProgramAccounts" && c.params?.[0] !== PROGRAM_ID.toBase58()) return "Only Kept accounts can be listed.";
   return null;
 }
+
+/** sendTransaction through our RPC only for transactions the sponsor pays for (the app's own). */
+function sponsoredOnly(call: { method?: unknown; params?: unknown[] }, sponsor: PublicKey): string | null {
+  if (call.method !== "sendTransaction" && call.method !== "simulateTransaction") return null;
+  try {
+    const raw = String(call.params?.[0] ?? "");
+    const bytes = Uint8Array.from(atob(raw), (ch) => ch.charCodeAt(0));
+    return Transaction.from(bytes).feePayer?.equals(sponsor) ? null : "Only Kept transactions can be sent here.";
+  } catch {
+    return "Only Kept transactions can be sent here.";
+  }
+}
+
+/** Per-IP (and per-key) budget; a missing limiter binding means no limit. */
+async function allowed(limiter: RateLimiter | undefined, key: string) {
+  if (!limiter) return true;
+  try {
+    return (await limiter.limit({ key })).success;
+  } catch {
+    return true;
+  }
+}
+const ipOf = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
+const tooMany = () => json({ error: "Too many requests. Try again in a minute." }, 429);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -109,6 +137,8 @@ const worker = {
         // this is a deterrent, the method allowlist and QuickNode's own rate limits are the real bound.)
         const origin = req.headers.get("origin");
         if (origin && origin !== url.origin) return json({ error: "Not allowed from this site." }, 403);
+        if (!(await allowed(env.RPC_LIMIT, ipOf(req)))) return tooMany();
+        if (Number(req.headers.get("content-length") ?? 0) > MAX_RPC_BODY) return json({ error: "Request too large." }, 413);
         const text = await req.text();
         if (text.length > MAX_RPC_BODY) return json({ error: "Request too large." }, 413);
         let body: unknown;
@@ -120,14 +150,20 @@ const worker = {
         const calls = Array.isArray(body) ? body : [body];
         if (calls.length === 0 || calls.length > MAX_RPC_BATCH) return json({ error: "Bad batch size." }, 400);
         for (const c of calls) {
-          const problem = vetRpc(c);
+          const problem = vetRpc(c) ?? sponsoredOnly(c, sponsor.publicKey);
           if (problem) return json({ error: problem }, 403);
+        }
+        if (calls.filter((c) => (c as { method?: string }).method === "getProgramAccounts").length > MAX_RPC_SCANS) {
+          return json({ error: "Too many scans in one request." }, 400);
         }
         // Fail fast: a hung upstream call returns 504 and the app retries it on the public RPC.
         let upstream: Response;
         try {
           upstream = await fetch(env.QUICKNODE_URL, {
-            method: "POST", headers: { "content-type": "application/json" }, body: text, signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+            method: "POST", headers: { "content-type": "application/json" },
+            // Forward exactly what was checked (re-serialized), never the raw text: duplicate JSON keys could
+            // otherwise mean one method here and another upstream.
+            body: JSON.stringify(body), signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
           });
         } catch {
           return json({ error: "Private RPC timed out." }, 504);
@@ -139,7 +175,9 @@ const worker = {
       }
 
       if (url.pathname === "/api/topup" && req.method === "POST") {
+        if (!(await allowed(env.TOPUP_LIMIT, `ip:${ipOf(req)}`))) return tooMany();
         const { owner, amount, blockhash } = (await req.json()) as { owner: string; amount: number; blockhash: string };
+        if (!(await allowed(env.TOPUP_LIMIT, `owner:${owner}`))) return tooMany();
         const usd = Number(amount);
         if (!(usd >= 1 && usd <= MAX_TOPUP_USD)) return json({ error: `Top up between $1 and $${MAX_TOPUP_USD}.` }, 400);
         const to = new PublicKey(owner);
@@ -157,10 +195,17 @@ const worker = {
       }
 
       if (url.pathname === "/api/sponsor" && req.method === "POST") {
+        if (!(await allowed(env.SPONSOR_LIMIT, ipOf(req)))) return tooMany();
+        if (Number(req.headers.get("content-length") ?? 0) > 8_192) return json({ error: "Request too large." }, 413);
         const { tx: raw } = (await req.json()) as { tx: string };
         const tx = Transaction.from(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
         const problem = vet(tx, sponsor.publicKey);
         if (problem) return json({ error: problem }, 400);
+        // With the private RPC, simulate before signing: a transaction that would fail never costs the sponsor.
+        if (env.QUICKNODE_URL) {
+          const sim = await simulate(env.QUICKNODE_URL, tx);
+          if (sim) return json({ error: sim.message, logs: sim.logs }, 400);
+        }
         tx.partialSign(sponsor);
         if (!tx.verifySignatures()) return json({ error: "Missing signatures." }, 400);
         return json({ tx: b64(tx) });
@@ -169,9 +214,10 @@ const worker = {
     } catch (e) {
       const err = e as { message?: string; logs?: string[] };
       const logs = err.logs ?? [];
-      const msg = logs.find((l) => l.includes("Error Message:"))?.split("Error Message: ")[1] ?? err.message ?? "Error";
-      // The Worker makes no network calls, so any failure here comes from a malformed request.
-      return json({ error: msg, logs }, 400);
+      const msg = logs.find((l) => l.includes("Error Message:"))?.split("Error Message: ")[1];
+      // Never echo raw exception text (it could quote configuration); program errors are safe to name.
+      console.error("api error", err.message);
+      return json({ error: msg ?? "Bad request.", logs }, 400);
     }
   },
 };
@@ -184,6 +230,11 @@ const b64 = (tx: Transaction) => btoa(String.fromCharCode(...tx.serialize()));
 function vet(tx: Transaction, sponsor: PublicKey): string | null {
   if (!tx.feePayer?.equals(sponsor)) return "Fee payer must be the sponsor.";
   if (tx.instructions.length === 0 || tx.instructions.length > 9) return "Unexpected transaction.";
+  // Every sponsored transaction sets its own compute limit (else Solana bills 200k CU per instruction) and
+  // does something in Kept: no fee-only transactions.
+  const limits = tx.instructions.filter((ix) => ix.programId.equals(COMPUTE_BUDGET) && ix.data[0] === 2);
+  if (limits.length !== 1) return "Set one compute limit.";
+  if (!tx.instructions.some((ix) => ix.programId.equals(PROGRAM_ID))) return "Only Kept instructions can be sponsored.";
   for (const ix of tx.instructions) {
     if (ix.programId.equals(COMPUTE_BUDGET)) {
       // Cap what a sponsored transaction can cost: ≤ 400k CU at ≤ 1,000,000 µlamports/CU (~0.0004 SOL).
@@ -199,10 +250,33 @@ function vet(tx: Transaction, sponsor: PublicKey): string | null {
       return "Only Kept instructions can be sponsored.";
     }
     if (!ix.programId.equals(PROGRAM_ID)) return "Only Kept instructions can be sponsored.";
-    const disc = Array.from(ix.data.subarray(0, 8)).join(",");
+    const d = Array.from(ix.data.subarray(0, 8)).join(",");
+    if (!APP_IXS.has(d)) return "Only Kept instructions can be sponsored.";
+    if (d === KAMINO_SUPPLY && (ix.data.length !== 16 || ix.data.subarray(8).some((b) => b !== 0))) return "Only whole-pot moves can be sponsored.";
     for (const [i, k] of ix.keys.entries()) {
-      if (k.pubkey.equals(sponsor) && !(i === 0 && PAYER_IXS.has(disc))) return "The sponsor can only pay rent.";
+      if (k.pubkey.equals(sponsor) && !(i === 0 && PAYER_IXS.has(d))) return "The sponsor can only pay rent.";
     }
   }
   return null;
+}
+
+/** Simulates on the private RPC without signatures; returns the program error, or null if it would succeed. */
+async function simulate(rpc: string, tx: Transaction): Promise<{ message: string; logs: string[] } | null> {
+  const wire = btoa(String.fromCharCode(...tx.serialize({ requireAllSignatures: false, verifySignatures: false })));
+  try {
+    const r = await fetch(rpc, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "simulateTransaction", params: [wire, { encoding: "base64", sigVerify: false, commitment: "confirmed" }] }),
+      signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+    });
+    const out = (await r.json()) as { result?: { value?: { err: unknown; logs?: string[] } } };
+    const v = out.result?.value;
+    if (!v || v.err === null || v.err === undefined) return null; // no answer: do not block the app on the RPC
+    const logs = v.logs ?? [];
+    const message = logs.find((l) => l.includes("Error Message:"))?.split("Error Message: ")[1] ?? "That would fail, so it was not sent.";
+    return { message, logs };
+  } catch {
+    return null;
+  }
 }

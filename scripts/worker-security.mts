@@ -54,6 +54,20 @@ await expect("drain SOL via a huge priority fee", "/api/sponsor",
 await expect("drain SOL via a moderate priority fee above the cap", "/api/sponsor",
   { tx: tx([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000_000 }), hm.createCrewIx(sponsor, attacker.publicKey, mint, 3n, "x", "x")]) }, false);
 await expect("garbage payload", "/api/sponsor", { tx: "bm90IGEgdHg=" }, false);
+// Audit H1/M3: fee-only transactions, unknown instructions, no compute limit, non-zero Kamino supply.
+const cu = (units: number, price: number) => [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: price })];
+await expect("fee-only: compute budget and nothing else", "/api/sponsor", { tx: tx(cu(400_000, 1_000_000), sponsor, []) }, false);
+const fake = (b: number) => ({ programId: hm.PROGRAM_ID, keys: [], data: Buffer.from([9, 9, 9, 9, 9, 9, 9, b]) }) as TransactionInstruction;
+await expect("made-up Kept instructions (unknown data)", "/api/sponsor", { tx: tx([...cu(400_000, 1_000_000), fake(1), fake(2)], sponsor, []) }, false);
+await expect("no compute limit (200k CU billed per instruction)", "/api/sponsor",
+  { tx: tx([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }), hm.createCrewIx(sponsor, attacker.publicKey, mint, 4n, "x", "x")]) }, false);
+if (cfg.kamino) {
+  const k = { reserve: new PublicKey(cfg.kamino.reserve), market: new PublicKey(cfg.kamino.market), pythOracle: new PublicKey(cfg.kamino.pythOracle) };
+  await expect("push part of someone's pot into Kamino (amount ≠ 0)", "/api/sponsor",
+    { tx: tx([...cu(400_000, 1_000), hm.kaminoSupplyIx(sponsor, mint, someCrew, k, 5n)], sponsor, []) }, false);
+}
+await expect("old tryhard call (rent sink, turned off)", "/api/sponsor",
+  { tx: tx([...cu(120_000, 1_000), hm.openCallIx(sponsor, attacker.publicKey, mint, someCrew, 0, 1, 1n)]) }, false);
 await expect("legit: create a crew, sponsor pays rent", "/api/sponsor",
   { tx: tx([...hm.priorityIxs(), hm.createCrewIx(sponsor, attacker.publicKey, mint, 1n, "Legit", "🔥")]) }, true);
 await expect("top-up $0", "/api/topup", { owner: attacker.publicKey.toBase58(), amount: 0, blockhash }, false);
@@ -77,6 +91,9 @@ if (String(cfg.rpc).endsWith("/api/rpc")) {
   await rpc("a bad call hidden in a batch", [call("getSlot"), call("requestAirdrop", [attacker.publicKey.toBase58(), 1e9])], false);
   await rpc("a batch of 50", Array.from({ length: 50 }, () => call("getSlot")), false);
   await rpc("garbage", "not json", false);
+  await rpc("duplicate JSON keys to sneak a method past the check", '{"jsonrpc":"2.0","id":1,"method":"requestAirdrop","method":"getSlot"}', true);
+  await rpc("send someone else's transaction through our RPC", call("sendTransaction", [tx([SystemProgram.transfer({ fromPubkey: attacker.publicKey, toPubkey: sponsor, lamports: 1 })], attacker.publicKey), { encoding: "base64" }]), false);
+  await rpc("three program-wide scans in one request", [0, 1, 2].map(() => call("getProgramAccounts", [hm.PROGRAM_ID.toBase58(), { encoding: "base64", dataSlice: { offset: 0, length: 0 } }])), false);
   await rpc("another website spending our credits", call("getSlot"), false, "https://evil.example");
   await rpc("legit: the app's own page", call("getSlot"), true, new URL(API).origin);
   await rpc("legit: read an account", call("getAccountInfo", [sponsor.toBase58(), { encoding: "base64" }]), true);

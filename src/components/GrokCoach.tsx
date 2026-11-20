@@ -5,7 +5,7 @@
 import { Loader2, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CoachResult, JobView } from "@/lib/grok";
-import { AppealError, getCoachJob, startCoach } from "@/lib/grok-client";
+import { AppealError, getCoachJob, startCoach, GROK_GAVE_UP, keepPolling } from "@/lib/grok-client";
 import { usd } from "@/lib/format";
 
 export function GrokCoach({ goal, member, onUse }: { goal: string; member?: string; onUse: (r: CoachResult) => void }) {
@@ -16,16 +16,21 @@ export function GrokCoach({ goal, member, onUse }: { goal: string; member?: stri
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; if (timer.current) clearTimeout(timer.current); }, []);
 
-  const poll = (id: string) => {
+  const poll = (id: string, startedAt: number) => {
     timer.current = setTimeout(async () => {
       if (!alive.current) return;
       try {
         const j = await getCoachJob(id);
         if (!alive.current) return;
         setJob(j);
-        if (j.status === "pending") poll(id);
-      } catch {
-        if (alive.current) poll(id);
+        if (j.status === "pending") {
+          if (Date.now() - startedAt > 10 * 60_000) setError(GROK_GAVE_UP);
+          else poll(id, startedAt);
+        }
+      } catch (e) {
+        if (!alive.current) return;
+        if (keepPolling(e, startedAt)) poll(id, startedAt);
+        else setError(e instanceof AppealError ? e.message : GROK_GAVE_UP);
       }
     }, 5000);
   };
@@ -36,7 +41,7 @@ export function GrokCoach({ goal, member, onUse }: { goal: string; member?: stri
     try {
       const { job_id } = await startCoach({ raw_goal: goal.trim(), member });
       setJob({ job_id, kind: "coach", status: "pending", created_at: Date.now() });
-      poll(job_id);
+      poll(job_id, Date.now());
     } catch (e) {
       setError(e instanceof AppealError ? e.message : "Something went wrong.");
     } finally {

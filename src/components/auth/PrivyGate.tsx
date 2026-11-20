@@ -29,12 +29,14 @@ class PrivySignerAdapter implements OwnerSigner {
   async sign(tx: Transaction) {
     // The sponsor is the fee payer and has not signed yet, so ask only for the owner's signature.
     const transaction = new Uint8Array(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
-    const { signedTransaction } = await this.signRef.current({
+    // A hidden signer that never answers must not freeze the app (every other action waits on this one).
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Signing took too long. Please try again.")), 60_000));
+    const { signedTransaction } = await Promise.race([timeout, this.signRef.current({
       transaction,
       wallet: this.wallet,
       chain: "solana:devnet",
       options: { uiOptions: { showWalletUIs: false } }, // no confirmation pop-up: one tap in our own UI
-    });
+    })]);
     tx.addSignature(this.publicKey, ownerSignatureFrom(signedTransaction, tx, this.publicKey));
   }
 }
@@ -78,6 +80,8 @@ function Session({ children }: { children: ReactNode }) {
 
   const [error, setError] = useState("");
   const [gaveUp, setGaveUp] = useState(false);
+  const [setupError, setSetupError] = useState(false);
+  const [setupTry, setSetupTry] = useState(0);
   const creating = useRef(false);
 
   // If Privy never starts (wrong app id, this site not in the allowed origins, no network), don't leave
@@ -95,10 +99,11 @@ function Session({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!ready || !authenticated || !walletsReady || wallet || creating.current) return;
     creating.current = true;
-    createWallet().catch(() => setError("We couldn't finish setting up your account. Please try again.")).finally(() => {
+    setSetupError(false);
+    createWallet().catch(() => setSetupError(true)).finally(() => {
       creating.current = false;
     });
-  }, [ready, authenticated, walletsReady, wallet, createWallet]);
+  }, [ready, authenticated, walletsReady, wallet, createWallet, setupTry]);
 
   // The rest of the app reads the name from localStorage ("hm.name"); fill it from Google or email once
   // per account, and forget the old account's saved name if someone else signs in on this device.
@@ -115,7 +120,9 @@ function Session({ children }: { children: ReactNode }) {
     return address;
   }, [authenticated, address, user]);
 
-  const signer = useMemo(() => (wallet ? new PrivySignerAdapter(wallet, signRef) : undefined), [wallet]);
+  // Rebuild the signer only when the account changes, not on every wallets refresh (avoids reconnects).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const signer = useMemo(() => (wallet ? new PrivySignerAdapter(wallet, signRef) : undefined), [address]);
   const signOut = useCallback(async () => {
     localStorage.removeItem(KEY_NAME);
     localStorage.removeItem(KEY_PROFILE);
@@ -125,7 +132,8 @@ function Session({ children }: { children: ReactNode }) {
   const value = useMemo(() => ({ kind: "privy" as const, signer, signOut }), [signer, signOut]);
 
   if (!ready) {
-    if (gaveUp) return <AuthContext.Provider value={{ kind: "local" }}>{children}</AuthContext.Provider>;
+    // Never switch to a hidden device-only account: money put there would not be in the person's real account.
+    if (gaveUp) return <Problem text="We can't reach sign-in right now." onRetry={() => location.reload()} />;
     return <Splash />;
   }
   if (!authenticated) {
@@ -142,6 +150,22 @@ function Session({ children }: { children: ReactNode }) {
       </AuthShell>
     );
   }
+  if (setupError) {
+    return <Problem text="We couldn't finish setting up your account." onRetry={() => setSetupTry((n) => n + 1)} onSignOut={() => void signOut()} />;
+  }
   if (!signer || started !== address) return <Splash text="Setting up your account" />;
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function Problem({ text, onRetry, onSignOut }: { text: string; onRetry: () => void; onSignOut?: () => void }) {
+  return (
+    <AuthShell>
+      <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+        <p className="text-lg">{text}</p>
+        <button onClick={onRetry} className="btn btn-primary w-full">Try again</button>
+        {onSignOut && <button onClick={onSignOut} className="btn btn-quiet w-full">Sign out</button>}
+        <a href="/demo" className="min-h-11 text-sm text-muted underline">Try the demo meanwhile</a>
+      </div>
+    </AuthShell>
+  );
 }

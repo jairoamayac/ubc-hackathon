@@ -124,7 +124,9 @@ function friendly(msg: string) {
   if (/\b(429|50[234])\b|too many requests|rate limit|jsonrpc|failed to fetch|fetch failed|networkerror|network request failed|load failed|timed? ?out|econn|socket hang up|getlatestblockhash|failed to get/i.test(msg)) return TROUBLE;
   // Never show chain internals to people (brand rule: no crypto jargon).
   if (/transaction|blockhash|signature|lamport|account|program|instruction|simulation|0x[0-9a-f]/i.test(msg)) return "Something went wrong. Try again.";
-  return msg;
+  // Code-level failures (a missing value, a bad type) are never shown as they are.
+  if (/cannot read|undefined|null|is not a function|typeerror|referenceerror|unexpected token|HTTP \d{3}/i.test(msg)) return "Something went wrong. Try again.";
+  return msg.replace(/\bcrew\b/gi, "group");
 }
 
 /**

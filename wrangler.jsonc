@@ -20,6 +20,12 @@
   // Secrets (never commit them): npx wrangler secret put GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY,
   // and, if the QuickNode Stream is used, QUICKNODE_STREAM_SECRET.
   "kv_namespaces": [{ "binding": "DISPUTES" }],
+  // Per-IP (and per-account for top-ups) budgets, so nobody can drain the sponsor or the RPC credits.
+  "ratelimits": [
+    { "name": "SPONSOR_LIMIT", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "TOPUP_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RPC_LIMIT", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
+  ],
   "vars": {
     "RPC_URL": "https://api.devnet.solana.com",
     "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn",

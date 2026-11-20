@@ -239,7 +239,8 @@ export async function confirm(conn: Connection, signature: string, lastValidBloc
     if (round % 4 === 3 && (await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
     await new Promise((r) => setTimeout(r, Math.min(2500, 900 + round * 250)));
   }
-  throw new Error("This is taking longer than usual, try again.");
+  // It may still land: say so, so nobody repeats a money action that already went through.
+  throw new Error("Still saving. Give it a minute and check your balance before trying again.");
 }
 
 // ================================================================ social layer (programs/house_money/src/social.rs)
@@ -427,6 +428,8 @@ const KIX = {
   kamino_redeem: [143, 225, 240, 130, 123, 5, 160, 84],
   refresh_reserve: [2, 218, 138, 235, 79, 201, 25, 102],
 };
+/** Every Kept instruction discriminator by name (core, social, Kamino). The edge API allowlists from this. */
+export const KEPT_IX = { ...IX, ...SOCIAL_IX, ...KIX } as const;
 const kpda = (seed: string, key: PublicKey) => PublicKey.findProgramAddressSync([enc(seed), key.toBytes()], KLEND_PROGRAM_ID)[0];
 export interface KaminoReserve { reserve: PublicKey; market: PublicKey; pythOracle: PublicKey }
 export const kaminoAccounts = (k: KaminoReserve) => ({

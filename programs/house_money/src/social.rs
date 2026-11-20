@@ -45,11 +45,12 @@ pub const VOTE_WINDOW_SECS: i64 = 120;
 
 /// Outcome of an entry nobody could settle by strict majority before the window closed:
 /// a plurality of cast votes decides; a tie or no votes refunds the stake (S8).
+/// After the window, an entry nobody decided by strict majority. Nobody loses money without a strict majority
+/// of the other participants (which `vote_entry` already applies), so a lone "no" can never take a stake:
+/// more "yes" than "no" keeps it (PASSED), anything else refunds it.
 pub fn finalize_outcome(pass_votes: u16, fail_votes: u16) -> u8 {
     if pass_votes > fail_votes {
         PASSED
-    } else if fail_votes > pass_votes {
-        FAILED
     } else {
         REFUNDED
     }
@@ -207,6 +208,9 @@ pub fn set_profile_handler(ctx: Context<SetProfile>, name: String) -> Result<()>
 }
 
 pub fn create_bet_handler(ctx: Context<CreateBet>, bet_id: u64, question: String, subject: Pubkey, closes_at: i64) -> Result<()> {
+    // Bets are off: they had no way to settle without a majority of every member, so stakes could stay
+    // locked forever (audit H2). The app never used them; existing bets can still be voted and claimed.
+    require!(false, HmError::Disabled);
     require!(!question.trim().is_empty() && question.len() <= MAX_QUESTION_LEN, HmError::BadName);
     let now = Clock::get()?.unix_timestamp;
     require!(closes_at > now, HmError::BadDeadline);
@@ -761,17 +765,19 @@ mod tests {
     }
 
     #[test]
-    fn finalize_uses_plurality_and_refunds_ties_or_silence() {
+    fn finalize_never_fails_anyone_without_a_majority() {
         // S8: one participant (nobody can vote on them) -> refund, never locked.
         assert_eq!(finalize_outcome(0, 0), REFUNDED);
         // Two participants, the other never voted -> refund.
         assert_eq!(finalize_outcome(0, 0), REFUNDED);
         // Three participants, split 1-1 -> refund.
         assert_eq!(finalize_outcome(1, 1), REFUNDED);
-        // Partial votes decide by plurality.
+        // More "yes" than "no" keeps the stake.
         assert_eq!(finalize_outcome(1, 0), PASSED);
-        assert_eq!(finalize_outcome(0, 1), FAILED);
         assert_eq!(finalize_outcome(2, 1), PASSED);
+        // A minority of "no" votes never takes a stake: refund.
+        assert_eq!(finalize_outcome(0, 1), REFUNDED);
+        assert_eq!(finalize_outcome(1, 2), REFUNDED);
     }
 
     #[test]

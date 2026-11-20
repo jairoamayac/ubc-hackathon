@@ -7,7 +7,7 @@ import { Check, Loader2, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChallengeView } from "@/lib/house-money/solana/live";
 import type { VerificationView } from "@/lib/grok";
-import { AppealError, getVerification, startVerification } from "@/lib/grok-client";
+import { AppealError, getVerification, startVerification, GROK_GAVE_UP, keepPolling } from "@/lib/grok-client";
 
 const LABEL = { KEPT: "Goal reached", MISSED: "Goal not reached", CANNOT_VERIFY: "Grok could not verify this" } as const;
 
@@ -33,8 +33,10 @@ export function VerifySheet({ pact, onClose }: { pact: ChallengeView; onClose: (
         if (!alive.current) return;
         setJob(v);
         if (v.status === "pending") poll(id, startedAt);
-      } catch {
-        if (alive.current) poll(id, startedAt);
+      } catch (e) {
+        if (!alive.current) return;
+        if (keepPolling(e, startedAt)) poll(id, startedAt);
+        else setError(e instanceof AppealError ? e.message : GROK_GAVE_UP);
       }
     }, 5000);
   };
