@@ -13,6 +13,8 @@ import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_
 import { coachGoal } from "@/lib/coach";
 import { AppealSheet } from "./AppealSheet";
 import { VerifySheet } from "./VerifySheet";
+import { GrokCoach } from "./GrokCoach";
+import { GrokGroup } from "./GrokGroup";
 import { StakePicker } from "./StakePicker";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
 import { usd } from "@/lib/format";
@@ -123,6 +125,8 @@ export function CrewRoom(props: {
           <button onClick={props.onDeposit} className="btn btn-primary mt-5 w-full">Join with money</button>
         )}
       </section>
+
+      {me && <GrokGroup groupId={crew.address.toBase58()} pacts={pacts} />}
 
       <div className="mt-2 flex items-center justify-between">
         <h2 className="text-lg font-medium">Pacts</h2>
@@ -378,6 +382,12 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
             {coach.measurable && <span className="mt-1 block text-muted">We count: {coach.metric.toLowerCase()}. Proof: {coach.proof.toLowerCase()}.</span>}
           </p>
         )}
+        <GrokCoach goal={goal} onUse={(r) => {
+          setGoal(r.goal.slice(0, 80));
+          setCoach(null);
+          if (r.suggested_stake_usd !== null) setStake(Math.max(min, Math.min(r.suggested_stake_usd, Math.max(min, Math.floor(free)))));
+          setSure(false);
+        }} />
       </div>
       <StakePicker value={stake} onChange={(v) => { setStake(v); setSure(false); }} min={min} max={Math.floor(free)} suggested={suggested} />
       {veryHigh && !tooMuch && (
