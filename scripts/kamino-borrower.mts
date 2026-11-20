@@ -68,8 +68,10 @@ if (LEND > 0n) {
   console.log(`  lender supplied $${Number(LEND) / 1e6} to the pool (${sig})`);
 }
 
-// 1. User metadata + obligation (once).
-if (!(await conn.getAccountInfo(obligation))) {
+// 1. User metadata + obligation (once). A second run tops up the same obligation, whose refresh must
+// then list its SOL deposit and hmUSD borrow.
+const existing = !!(await conn.getAccountInfo(obligation));
+if (!existing) {
   await send([
     kix([m(borrower.publicKey, false, true), m(borrower.publicKey, true, true), m(userMeta, true), m(KLEND), m(SYSVAR_RENT_PUBKEY), m(SystemProgram.programId)],
       Buffer.concat([disc("init_user_metadata"), PublicKey.default.toBuffer()])),
@@ -86,7 +88,8 @@ const sig2 = await send([
   SystemProgram.transfer({ fromPubkey: borrower.publicKey, toPubkey: wsol, lamports: COLL }),
   createSyncNativeInstruction(wsol),
   refreshReserve(solReserve, solOracle),
-  refreshObligation([], []),
+  ...(existing ? [refreshReserve(usdReserve, usdOracle)] : []),
+  existing ? refreshObligation([solReserve], [usdReserve]) : refreshObligation([], []),
   kix([m(borrower.publicKey, true, true), m(obligation, true), m(market), m(lma), m(solReserve, true), m(NATIVE_MINT),
     m(r("reserve_liq_supply", solReserve), true), m(r("reserve_coll_mint", solReserve), true), m(r("reserve_coll_supply", solReserve), true),
     m(wsol, true), m(KLEND), m(TOKEN_PROGRAM_ID), m(TOKEN_PROGRAM_ID), m(IXS), m(KLEND), m(KLEND), m(FARMS)],
@@ -100,7 +103,7 @@ const sig3 = await send([
   createAssociatedTokenAccountIdempotentInstruction(borrower.publicKey, usdAta, borrower.publicKey, usdMint),
   refreshReserve(solReserve, solOracle),
   refreshReserve(usdReserve, usdOracle),
-  refreshObligation([solReserve], []),
+  refreshObligation([solReserve], existing ? [usdReserve] : []),
   kix([m(borrower.publicKey, false, true), m(obligation, true), m(market), m(lma), m(usdReserve, true), m(usdMint),
     m(r("reserve_liq_supply", usdReserve), true), m(r("fee_receiver", usdReserve), true), m(usdAta, true), m(KLEND),
     m(TOKEN_PROGRAM_ID), m(IXS), m(KLEND), m(KLEND), m(FARMS)],
