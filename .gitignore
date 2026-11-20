@@ -45,3 +45,5 @@ next-env.d.ts
 /target
 /.dev.vars
 /.wrangler
+.local-ledger/
+.local-validator.log

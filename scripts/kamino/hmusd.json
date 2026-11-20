@@ -1,0 +1,205 @@
+{
+ "status": 0,
+ "loanToValuePct": 0,
+ "liquidationThresholdPct": 0,
+ "minLiquidationBonusBps": 500,
+ "protocolLiquidationFeePct": 0,
+ "protocolOrderExecutionFeePct": 0,
+ "protocolTakeRatePct": 0,
+ "assetTier": 0,
+ "multiplierSideBoost": [
+  1,
+  1
+ ],
+ "maxLiquidationBonusBps": 1000,
+ "badDebtLiquidationBonusBps": 99,
+ "fees": {
+  "borrowFee": "0",
+  "flashLoanFee": "0",
+  "padding": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ]
+ },
+ "depositLimit": "6000000000000000",
+ "borrowLimit": "5400000000000000",
+ "tokenInfo": {
+  "name": "hmUSD",
+  "heuristic": {
+   "exp": "0",
+   "lower": "0",
+   "upper": "0"
+  },
+  "maxTwapDivergenceBps": "0",
+  "maxAgePriceSeconds": "86400",
+  "maxAgeTwapSeconds": "86400",
+  "scopeConfiguration": {
+   "priceFeed": "11111111111111111111111111111111",
+   "priceChain": [
+    65535,
+    65535,
+    65535,
+    65535
+   ],
+   "twapChain": [
+    65535,
+    65535,
+    65535,
+    65535
+   ]
+  },
+  "switchboardConfiguration": {
+   "priceAggregator": "11111111111111111111111111111111",
+   "twapAggregator": "11111111111111111111111111111111"
+  },
+  "pythConfiguration": {
+   "price": "Dpw1EAVrSB1ibxiDQyTAW6Zip3J4Btk2x4SgApQCeFbX"
+  },
+  "blockPriceUsage": 0
+ },
+ "borrowRateCurve": {
+  "points": [
+   {
+    "utilizationRateBps": 0,
+    "borrowRateBps": 2000
+   },
+   {
+    "utilizationRateBps": 8000,
+    "borrowRateBps": 5000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   },
+   {
+    "utilizationRateBps": 10000,
+    "borrowRateBps": 10000
+   }
+  ]
+ },
+ "depositWithdrawalCap": {
+  "configCapacity": "400000000000000",
+  "currentTotal": "0",
+  "lastIntervalStartTimestamp": "0",
+  "configIntervalLengthSeconds": "86400"
+ },
+ "debtWithdrawalCap": {
+  "configCapacity": "400000000000000",
+  "currentTotal": "0",
+  "lastIntervalStartTimestamp": "0",
+  "configIntervalLengthSeconds": "86400"
+ },
+ "deleveragingMarginCallPeriodSecs": "604800",
+ "borrowFactorPct": "100",
+ "elevationGroups": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "autodeleverageEnabled": 1,
+ "deleveragingBonusIncreaseBpsPerDay": 100,
+ "deleveragingThresholdDecreaseBpsPerDay": "24",
+ "multiplierTagBoost": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "disableUsageAsCollOutsideEmode": 0,
+ "utilizationLimitBlockBorrowingAbovePct": 80,
+ "hostFixedInterestRateBps": 0,
+ "borrowLimitOutsideElevationGroup": "18446744073709551615",
+ "borrowLimitAgainstThisCollateralInElevationGroup": [
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0"
+ ],
+ "reserved1": [
+  0,
+  0
+ ]
+}

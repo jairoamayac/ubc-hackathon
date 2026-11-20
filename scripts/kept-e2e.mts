@@ -12,7 +12,7 @@ const RPC = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 const conn = new Connection(RPC, "confirmed");
 const cluster = RPC.includes("127.0.0.1") || RPC.includes("localhost") ? "local" : "devnet";
 const sponsor = loadOrCreate("sponsor");
-const state = JSON.parse(fs.readFileSync(new URL(`../keys/${cluster}.json`, import.meta.url), "utf8"));
+const state = JSON.parse(fs.readFileSync(new URL(`../keys/${process.env.STATE_FILE ?? `${cluster}.json`}`, import.meta.url), "utf8"));
 const mint = new PublicKey(state.mint);
 const sponsorAta = getAssociatedTokenAddressSync(mint, sponsor.publicKey);
 const WAIT = Number(process.env.WAIT_SECONDS ?? 8);
@@ -142,6 +142,28 @@ const left = hm.toUsd(await vaultOf(crew));
 assert(left < 0.05, `vault drained except dust (${left})`);
 ok(`everyone withdrew; $${left.toFixed(6)} of rounding dust left in the pot`);
 note("Withdrawals: group escrow back to ~$0", hm.crewVaultPda(crew).toBase58());
+
+// 6. Nobody can lock money forever (S8): a pact where nobody votes is refunded after the voting window.
+if (!process.env.SKIP_FINALIZE) {
+  for (const kp of [maria, sam]) {
+    const ata = getAssociatedTokenAddressSync(mint, kp.publicKey);
+    await send([createTransferCheckedInstruction(sponsorAta, mint, ata, sponsor.publicKey, hm.fromUsd(10), hm.DECIMALS), hm.depositIx(kp.publicKey, mint, crew, hm.fromUsd(10))], [kp]);
+  }
+  const quietId = 3n, quiet = hm.challengePda(crew, quietId);
+  const quietEnds = Math.floor(Date.now() / 1000) + WAIT;
+  await send([hm.createChallengeIx(sponsor.publicKey, maria.publicKey, crew, quietId, "Nobody votes", hm.fromUsd(5), quietEnds)], [maria]);
+  await send([hm.joinWithGoalIx(sponsor.publicKey, maria.publicKey, crew, quiet, "Walk 10k steps", hm.fromUsd(5))], [maria]);
+  await send([hm.joinWithGoalIx(sponsor.publicKey, sam.publicKey, crew, quiet, "No sugar today", hm.fromUsd(5))], [sam]);
+  await expectFail([hm.finalizeEntryIx(crew, quiet, maria.publicKey)], [], "BetStillOpen");
+  await sleep((quietEnds + hm.VOTE_WINDOW_SECS - Math.floor(Date.now() / 1000) + 2) * 1000);
+  await expectFail([hm.voteEntryIx(sponsor.publicKey, sam.publicKey, crew, quiet, maria.publicKey, false)], [sam], "VotingClosed");
+  const pre = { maria: await valueOf(crew, maria.publicKey), sam: await valueOf(crew, sam.publicKey) };
+  await send([hm.finalizeEntryIx(crew, quiet, maria.publicKey), hm.finalizeEntryIx(crew, quiet, sam.publicKey)], []);
+  for (const kp of [maria, sam]) await send([hm.claimChallengeIx(kp.publicKey, crew, quiet)], [kp]);
+  const back = { maria: (await valueOf(crew, maria.publicKey)) - pre.maria, sam: (await valueOf(crew, sam.publicKey)) - pre.sam };
+  assert(Math.abs(back.maria - 5) < 0.01 && Math.abs(back.sam - 5) < 0.01, `both refunded $5 (got ${back.maria}, ${back.sam})`);
+  ok(`nobody voted: after the ${hm.VOTE_WINDOW_SECS}s window both stakes were refunded ($5 each); voting closed`);
+}
 
 // Optional: a second pact left open with money locked, so the escrow can be inspected live.
 if (process.env.KEEP_OPEN) {

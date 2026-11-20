@@ -4,7 +4,7 @@ import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction,
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Buffer } from "buffer";
 
-export const PROGRAM_ID = new PublicKey("9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
+export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
 /** Pyth SOL/USD PriceUpdateV2 account (sponsored feed, Solana devnet). */
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
@@ -246,6 +246,7 @@ const SOCIAL_IX = {
   join_challenge: [41, 104, 214, 73, 32, 168, 76, 79],
   vote_entry: [153, 149, 139, 2, 39, 46, 186, 44],
   claim_challenge: [132, 167, 9, 45, 203, 244, 30, 171],
+  finalize_entry: [74, 183, 224, 180, 84, 147, 96, 134],
   join_with_goal: [164, 7, 145, 205, 198, 59, 220, 112],
   take_fee: [78, 179, 29, 200, 7, 172, 106, 91],
 } as const;
@@ -281,7 +282,9 @@ export const feePda = (challenge: PublicKey) => pda([enc("fee"), challenge.toByt
 /** Platform share of forfeits (mirrors social::PLATFORM_FEE_BPS). */
 export const PLATFORM_FEE_BPS = 500n;
 export function platformFee(passed: bigint, failed: bigint) {
-  return passed === 0n ? 0n : (failed * PLATFORM_FEE_BPS) / 10_000n;
+  if (passed === 0n) return 0n;
+  const fee = (failed * PLATFORM_FEE_BPS) / 10_000n;
+  return fee < failed ? fee : failed;
 }
 /** Mirrors social::commitment_payout: stake + pro-rata share of 95% of the forfeits. */
 export function commitmentPayout(own: bigint, passed: bigint, failed: bigint) {
@@ -388,6 +391,12 @@ export function claimChallengeIx(owner: PublicKey, crew: PublicKey, challenge: P
     new W().bytes(SOCIAL_IX.claim_challenge).done());
 }
 
+/** After the voting window (social::VOTE_WINDOW_SECS), settles an entry nobody decided: plurality, or a refund. */
+export const VOTE_WINDOW_SECS = 120;
+export function finalizeEntryIx(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey) {
+  return ix([m(crew), m(challenge, true), m(entryPda(challenge, entryOwner), true)], new W().bytes(SOCIAL_IX.finalize_entry).done());
+}
+
 export function joinWithGoalIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey, goal: string, stake: bigint) {
   const entry = entryPda(challenge, owner);
   return ix([m(payer, true, true), m(owner, false, true), m(crew), m(crewVaultPda(crew)), m(memberPda(crew, owner), true),
@@ -398,4 +407,52 @@ export function takeFeeIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, ch
   return ix([m(payer, true, true), m(configPda()), m(mint), m(crew, true), m(crewVaultPda(crew), true), m(houseVaultPda(), true),
     m(challenge), m(feePda(challenge), true), m(TOKEN_PROGRAM_ID), m(SystemProgram.programId)],
     new W().bytes(SOCIAL_IX.take_fee).done());
+}
+
+// ---------------------------------------------------------------- real yield: Kamino Lend (klend)
+export const KLEND_PROGRAM_ID = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
+const SYSVAR_INSTRUCTIONS = new PublicKey("Sysvar1nstructions1111111111111111111111111");
+const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const KIX = {
+  set_kamino_reserve: [175, 135, 28, 43, 142, 0, 170, 196],
+  kamino_supply: [145, 46, 142, 2, 176, 57, 162, 159],
+  kamino_redeem: [143, 225, 240, 130, 123, 5, 160, 84],
+  refresh_reserve: [2, 218, 138, 235, 79, 201, 25, 102],
+};
+const kpda = (seed: string, key: PublicKey) => PublicKey.findProgramAddressSync([enc(seed), key.toBytes()], KLEND_PROGRAM_ID)[0];
+export interface KaminoReserve { reserve: PublicKey; market: PublicKey; pythOracle: PublicKey }
+export const kaminoAccounts = (k: KaminoReserve) => ({
+  lma: kpda("lma", k.market),
+  liqSupply: kpda("reserve_liq_supply", k.reserve),
+  collMint: kpda("reserve_coll_mint", k.reserve),
+});
+/** Kamino needs the reserve refreshed (fresh Pyth price, accrued interest) earlier in the same transaction. */
+export function refreshReserveIx(k: KaminoReserve) {
+  return new TransactionInstruction({
+    programId: KLEND_PROGRAM_ID,
+    keys: [m(k.reserve, true), m(k.market), m(k.pythOracle), m(KLEND_PROGRAM_ID), m(KLEND_PROGRAM_ID), m(KLEND_PROGRAM_ID)],
+    data: Buffer.from(KIX.refresh_reserve),
+  });
+}
+export function setKaminoReserveIx(admin: PublicKey, reserve: PublicKey) {
+  return ix([m(admin, false, true), m(configPda(), true), m(reserve)], Buffer.from(KIX.set_kamino_reserve));
+}
+function kaminoMoveKeys(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve) {
+  const a = kaminoAccounts(k);
+  return [m(payer, true, true), m(configPda()), m(mint), m(crew, true), m(crewVaultPda(crew), true), m(k.reserve, true), m(k.market),
+    m(a.lma), m(a.liqSupply, true), m(a.collMint, true), m(getAssociatedTokenAddressSync(a.collMint, crew, true), true),
+    m(TOKEN_PROGRAM_ID), m(TOKEN_PROGRAM_ID), m(ASSOCIATED_TOKEN_PROGRAM), m(SystemProgram.programId), m(SYSVAR_INSTRUCTIONS),
+    m(KLEND_PROGRAM_ID)];
+}
+export function kaminoSupplyIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve, amount: bigint) {
+  return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_supply).u64(amount).done());
+}
+export function kaminoRedeemIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve) {
+  return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_redeem).done());
+}
+/** Kamino fields that follow `vault_bump` in a Crew account (Borsh: right after the variable-length strings). */
+export function decodeCrewKamino(d: Uint8Array) {
+  const r = new R(d);
+  r.pk(); r.u64(); r.str(); r.str(); r.u64(); r.u64(); r.u64(); r.u32(); r.i64(); r.i64(); r.u8(); r.u8();
+  return { principal: r.u64(), ctokens: r.u64() };
 }
