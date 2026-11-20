@@ -26,7 +26,7 @@ the stake in your own friend group and the custody in code. More in [`docs/conte
 1. **Sign in with your email** (Privy creates your account; no wallet, no seed phrase).
 2. **Add money** with Apple Pay (simulated on devnet; Crossmint on-ramp planned).
 3. **Make a promise**: your own goal, your own stake, a deadline. Friends join the pact with theirs.
-4. **While it runs**, the group's pot is lent on **Kamino Lend** and earns interest.
+4. **While it runs**, the group's pot is lent on **Kamino Lend** and earns interest; the group screen shows *Earning on Kamino* with what it has earned so far.
 5. **When time is up**, each participant votes on the others: *Kept it* or *Didn't*. A strict majority of the
    others decides; nobody loses money without that majority.
 6. **Collect**: winners get their stake plus a share of 95% of what was left behind; Kept takes 5%, once. If

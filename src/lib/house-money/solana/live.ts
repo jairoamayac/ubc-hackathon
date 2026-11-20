@@ -17,6 +17,8 @@ export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
   growthPct: number; // yield paid / principal
   yieldPerDay: number; // at the current (demo) rate
+  /** Dollars lent on Kamino Lend right now (at cost) and interest earned there so far (redeemed + still lent). */
+  kamino: { lent: number; earned: number };
   me?: { value: number; principal: number; playable: number; member: hm.MemberAccount; /** UI only: just joined, not on the network yet */ pending?: boolean };
   /** Dollars of mine locked on pact goals here (still mine until friends confirm), same formula as the group screen. */
   locked: number;
@@ -255,6 +257,15 @@ export class LiveClient {
       return [m.crew.toBase58(), m];
     }));
     const perDayRate = (config.apyBps / 10_000) * (config.timeWarp / 365);
+    // What one Kamino cToken is worth now, read from the reserve (interest as of its last refresh).
+    let rate = 1;
+    if (this.kamino) {
+      try {
+        const ka = hm.kaminoAccounts(this.kamino);
+        const [res, sup] = await Promise.all([this.conn.getAccountInfo(this.kamino.reserve), this.conn.getTokenSupply(ka.collMint)]);
+        if (res) rate = hm.ctokenRate(res.data, BigInt(sup.value.amount));
+      } catch { /* keep 1: show at cost */ }
+    }
 
     const views: CrewView[] = crews.map((c, i) => {
       // A pot's assets = dollars in its vault + dollars it lent to Kamino (same rule as the program's crew_assets).
@@ -266,6 +277,10 @@ export class LiveClient {
         growthPct: principal > 0 ? (hm.toUsd(c.yieldPaid) / principal) * 100 : 0,
         yieldPerDay: principal * perDayRate,
         locked: 0,
+        kamino: {
+          lent: hm.toUsd(c.kaminoPrincipal),
+          earned: Math.max(0, hm.toUsd(c.yieldPaid) + (Number(c.kaminoCtokens) * rate - Number(c.kaminoPrincipal)) / 1e6),
+        },
       };
       for (const e of myEntries) {
         const ch = challenges.get(e.challenge.toBase58());

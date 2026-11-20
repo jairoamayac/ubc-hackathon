@@ -75,6 +75,15 @@ export function GroupScreen(props: {
             <span className="pointer-events-none absolute -right-1 -top-1"><Icon3D name="money-bag" size={88} glow /></span>
             <p className="flex items-center gap-2 text-sm">Group pot {current && phaseOf(current, now) === "open" && <LockedPill />}</p>
             <p className="num mt-2 text-[48px] leading-none">{usd(current ? current.potUsd : crew.vault)}</p>
+            {(crew.kamino.lent > 0 || crew.kamino.earned > 0) && (
+              <p className="mt-3 flex items-center justify-between gap-2 rounded-2xl bg-white/55 px-3 py-2 text-sm" aria-label={`Lent on Kamino, ${usd(crew.kamino.earned)} earned so far`}>
+                <span className="flex items-center gap-2">
+                  <span aria-hidden className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-forest opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-forest" /></span>
+                  {crew.kamino.lent > 0 ? "Earning on Kamino" : "Earned on Kamino"}
+                </span>
+                <span className="mono tabular-nums font-medium" aria-hidden>+${crew.kamino.earned.toFixed(crew.kamino.earned < 0.01 ? 6 : 4)}</span>
+              </p>
+            )}
             <p className="mt-3 flex items-center justify-between gap-2 text-sm">
               <span>{crew.members} {crew.members === 1 ? "person" : "people"}{current ? ` · ${phaseOf(current, now) === "open" ? `ends ${dateLabel(current.challenge.endsAt)}` : phaseOf(current, now) === "settled" ? "settled" : "voting"}` : ""}</span>
               <span className="flex -space-x-2" aria-hidden>{detail.people.slice(0, 5).map((p) => <Avatar key={p.owner.toBase58()} name={p.name} size={26} tone="bg-white" />)}</span>

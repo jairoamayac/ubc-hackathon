@@ -40,7 +40,7 @@ A group of 5 (Martin, Ana, Ben, Cara and Dani) stakes $50 each, so the pot is $2
 - Missed stakes: $150. Platform 5%: $7.50. Keepers 95%: $142.50, split $71.25 each (equal stakes).
 - Martin receives $50 + $71.25 = **$121.25**, and so does Ana. Ben, Cara and Dani get $0. Platform: $7.50.
 - Check: $121.25 + $121.25 + $7.50 = $250.
-- Yield over 5 days at ~4% APY: about $0.14 in total (simulated in the demo), of which the platform's 35% is about $0.05.
+- Yield over 5 days at ~4% APY: about $0.14 in total, of which the platform's 35% is about $0.05. On devnet the yield is real (Kamino Lend); the offline demo shows an illustrative counter.
 
 ### Illustrative scale (assumptions, not projections)
 1,000 groups × $250 locked for 90 days, at ~4% APY: about $2,466 of yield, so about $863 to the platform at 35%. If 40% of stakes were missed (assumption), 5% of $100,000 would be $5,000. Reference rates: Solana's main USDC lending markets paid about 3.6–4.1% APY on Nov 20, 2026, with 30-day averages of about 4.4–5.5% (DefiLlama: [Kamino main market](https://defillama.com/yields/pool/d2141a59-c199-4be7-8d4b-c8223954836b), [Jupiter Lend Earn](https://defillama.com/yields/pool/d783c8df-e2ed-44b4-8317-161ccc1b5f06)). Rates change constantly.
@@ -96,7 +96,8 @@ The official rules require a working prototype that interacts with the blockchai
 
 | Must be real | Can be mocked |
 |---|---|
-| The Anchor escrow on devnet: join with stake, submit_proof, vote, open_dispute, resolve_dispute, settle (95/5) | Yield (simulated APY and amounts) |
+| The Anchor escrow on devnet: join with stake, submit_proof, vote, open_dispute, resolve_dispute, settle (95/5) | The yield counter in the offline `/demo` (illustrative 4% APY on a sped-up clock) |
+| Yield: locked pots are lent on Kamino Lend and earn real interest on devnet; the group screen shows it | |
 | `DisputeOpened` → QuickNode Stream (with a filter and a webhook destination) | Apple Pay and bank on-ramp (mint test USDC) |
 | The Grok Bot routine proposing a verdict with reasons | Strava, Screen Time and Apple Health ("coming soon") |
 | Group confirmation → on-chain resolve | Friends' accounts signed by backend demo keys |

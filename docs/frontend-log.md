@@ -86,3 +86,8 @@ Pot $250, forfeited $150, platform 5% = $7.50, keepers $142.50, so Martin and An
 - On-chain `open_dispute` is in (separate Dispute account, KEPT:DisputeOpened log) with the signed QuickNode Stream webhook `POST /api/streams/quicknode`; the Stream itself is created by the account owner (docs/quicknode-stream.md).
 - Coach and group roles: POST /api/coach, POST /api/group/ask, GET /api/jobs/:id (callbacks matched by the one-time token, no echoed id needed). App: GrokCoach suggestion card in the goal form (instant coach stays the default) and a "Grok check-in" card in the group with an "Ask Grok" button. 31 Worker checks pass with fakes.
 - Not done: the daily Cloudflare Cron for the group role (needs a list of active groups on the Worker side) and QuickNode.
+
+## 2026-11-20, yield is live
+
+* The live app's group screen shows "Earning on Kamino" with the interest the pot has earned on Kamino Lend (read from the program and the Kamino reserve on devnet).
+* `/demo` shows an illustrative counter (4% APY on the demo clock) and adds funds with Apple Pay through Crossmint.

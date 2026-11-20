@@ -53,7 +53,7 @@ class W {
   }
 }
 class R {
-  private o = 8; // skip discriminator
+  o = 8; // skip discriminator
   private v: DataView;
   private d: Uint8Array;
   constructor(d: Uint8Array) { this.d = d; this.v = new DataView(d.buffer, d.byteOffset, d.byteLength); }
@@ -89,6 +89,8 @@ export interface ConfigAccount extends ConfigArgs { admin: PublicKey; mint: Publ
 export interface CrewAccount {
   /** Dollars this pot has supplied to Kamino Lend and not yet redeemed (part of its assets). */
   kaminoPrincipal: bigint;
+  /** Kamino cTokens the pot holds (its lent dollars plus the interest they earned, at the reserve's rate). */
+  kaminoCtokens: bigint;
   address: PublicKey; creator: PublicKey; crewId: bigint; name: string; emoji: string;
   totalShares: bigint; totalPrincipal: bigint; yieldPaid: bigint; members: number; createdAt: number; lastAccrual: number;
 }
@@ -115,7 +117,7 @@ export function decodeCrew(address: PublicKey, d: Uint8Array): CrewAccount {
   return {
     address, creator: r.pk(), crewId: r.u64(), name: r.str(), emoji: r.str(), totalShares: r.u64(), totalPrincipal: r.u64(),
     yieldPaid: r.u64(), members: r.u32(), createdAt: Number(r.i64()), lastAccrual: Number(r.i64()),
-    ...(() => { r.u8(); r.u8(); return { kaminoPrincipal: r.u64() }; })(),
+    ...(() => { r.u8(); r.u8(); const kaminoPrincipal = r.u64(); return { kaminoPrincipal, kaminoCtokens: d.length >= r.o + 8 ? r.u64() : 0n }; })(),
   };
 }
 export function decodeMember(address: PublicKey, d: Uint8Array): MemberAccount {
@@ -464,6 +466,19 @@ export const kaminoAccounts = (k: KaminoReserve) => ({
   collMint: kpda("reserve_coll_mint", k.reserve),
 });
 /** Kamino needs the reserve refreshed (fresh Pyth price, accrued interest) earlier in the same transaction. */
+/**
+ * Dollars (6-decimal units) one Kamino cToken is worth now: (available + borrowed - fees) / cToken supply.
+ * Offsets in klend's Reserve account: available_amount u64 @224, borrowed_amount_sf u128 @232 and
+ * protocol/referrer/pending fees u128 @344/360/376 (scaled by 2^60). Checked on devnet against the supply vault.
+ */
+export function ctokenRate(reserve: Uint8Array, ctokenSupply: bigint): number {
+  const v = new DataView(reserve.buffer, reserve.byteOffset, reserve.byteLength);
+  const u128 = (o: number) => v.getBigUint64(o, true) + (v.getBigUint64(o + 8, true) << 64n);
+  const SF = 2 ** 60;
+  const liquidity = Number(v.getBigUint64(224, true)) + Number(u128(232)) / SF - (Number(u128(344)) + Number(u128(360)) + Number(u128(376))) / SF;
+  return ctokenSupply > 0n ? liquidity / Number(ctokenSupply) : 1;
+}
+
 export function refreshReserveIx(k: KaminoReserve) {
   return new TransactionInstruction({
     programId: KLEND_PROGRAM_ID,
