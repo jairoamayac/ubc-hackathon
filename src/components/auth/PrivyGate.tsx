@@ -116,9 +116,6 @@ function Session({ children }: { children: ReactNode }) {
     const t = setTimeout(() => setSetupError(true), WALLET_WAIT_MS);
     return () => clearTimeout(t);
   }, [ready, authenticated, wallet, hasAccount, setupTry]);
-  useEffect(() => {
-    if (wallet) setSetupError(false);
-  }, [wallet]);
 
   // "Try again": with an account already on file the cleanest retry is a fresh load of the session.
   const retrySetup = useCallback(() => {
@@ -170,7 +167,7 @@ function Session({ children }: { children: ReactNode }) {
       </AuthShell>
     );
   }
-  if (setupError) {
+  if (setupError && !wallet) {
     return <Problem text="We couldn't finish setting up your account." onRetry={retrySetup} onSignOut={() => void signOut()} />;
   }
   if (!signer || started !== address) return <Splash text="Setting up your account" />;
