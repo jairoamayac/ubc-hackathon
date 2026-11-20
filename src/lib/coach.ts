@@ -73,6 +73,10 @@ const RULES: Rule[] = [
   },
 ];
 
+// "No eating out this week" has no digit but it is checkable: it says what not to do and until when.
+const NEGATION = /\b(no|not|without|never|zero|none|avoid|skip|stop|quit|don'?t|cut)\b/i;
+const TIME_WINDOW = /\b(today|tonight|tomorrow|this (week|weekend|month)|next (week|month)|the (week|weekend|month)|until|by (mon|tue|wed|thu|fri|sat|sun|the end|friday|sunday)\w*|every (day|night|morning)|daily|all (week|month|weekend))\b/i;
+
 export function coachGoal(input: string): Coaching {
   const original = input.trim();
   if (!original) {
@@ -90,6 +94,18 @@ export function coachGoal(input: string): Coaching {
     };
   }
   const hasNumber = /\d/.test(original);
+  const rule0 = RULES.find((r) => r.test.test(original));
+  if (!hasNumber && !rule0 && NEGATION.test(original) && TIME_WINDOW.test(original)) {
+    return {
+      measurable: true,
+      original,
+      goal: original,
+      metric: "Days without it",
+      proof: "A bank app or Screen Time screenshot, or your friends' word",
+      stake: STAKE_SUGGESTED_MIN,
+      note: "It says what you won't do and until when, so your friends can check it.",
+    };
+  }
   const rule = RULES.find((r) => r.test.test(original));
   if (!rule) {
     return {
@@ -99,7 +115,7 @@ export function coachGoal(input: string): Coaching {
       metric: hasNumber ? "The number in your goal" : "Add a number and a date",
       proof: "A screenshot or photo that shows it",
       stake: STAKE_SUGGESTED_MIN,
-      note: hasNumber ? "It has a number, so your friends can check it." : "Add a number and a date so your friends can check it.",
+      note: hasNumber ? "It has a number, so your friends can check it." : "Add how much and by when, for example \"Spend under $50 eating out by Sunday\".",
     };
   }
   const m = original.match(rule.test) as RegExpMatchArray;
