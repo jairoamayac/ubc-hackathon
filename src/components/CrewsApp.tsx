@@ -364,7 +364,7 @@ function Home({ name, cash, free, onLine, goals, groups, details, now, onGoal, o
                   <span className="mt-3 block max-w-[78%] text-[22px] font-medium leading-tight tracking-tight">{g.me.goal ?? roundTitle(g.v)}</span>
                   <span className="mt-3 flex items-center gap-3">
                     <span className="num text-[36px] leading-none">{usd(g.me.usd)}</span>
-                    <span className="pill bg-white text-ink">{g.phase === "open" ? `${timeLeft(g.v.challenge.endsAt - now)} left` : g.phase === "settled" ? "See results" : "Friends are voting"}</span>
+                    <span className="pill bg-white text-ink">{g.phase === "open" ? `${timeLeft(g.v.challenge.endsAt - now)} left` : g.phase === "settled" ? "See results" : g.v.challenge.participants < 2 ? "Refund on the way" : "Friends are voting"}</span>
                   </span>
                   {g.phase === "open" && (
                     <span className="mt-4 block">

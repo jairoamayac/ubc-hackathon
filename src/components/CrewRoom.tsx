@@ -92,7 +92,7 @@ export function GroupScreen(props: {
           {current && isMember && phaseOf(current, now) !== "open" && (
             <button onClick={props.onNewGoal} className="btn btn-quiet w-full"><Plus className="h-4 w-4" aria-hidden /> Start a new round</button>
           )}
-          <button onClick={invite} className="btn btn-primary w-full"><Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite friends"}</button>
+          <button onClick={invite} className="btn btn-white w-full text-ink"><Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite friends"}</button>
 
           {past.length > 0 && (
             <section aria-labelledby="past">
@@ -349,7 +349,7 @@ export function ResultsScreen({ v, crewName, now, busy, onBack, onVote, onCollec
     return (
       <Page>
         <Header title="Results" onBack={onBack} />
-        <Empty icon="chat-check" title="Friends are voting" body={`Voting closes in ${timeLeft(v.challenge.endsAt + hm.VOTE_WINDOW_SECS - now)}. Anything still undecided then is settled by the votes cast, and a tie or no votes refunds.`}>
+        <Empty icon="chat-check" title={v.challenge.participants < 2 ? "Nobody else can vote" : "Friends are voting"} body={`${v.challenge.participants < 2 ? "You were the only one in this round, so your stake comes back. " : ""}Voting closes in ${timeLeft(v.challenge.endsAt + hm.VOTE_WINDOW_SECS - now)}. Anything still undecided then is settled by the votes cast, and a tie or no votes refunds.`}>
           {toVote.length > 0 && <button onClick={() => onVote(toVote[0].entry.owner.toBase58())} className="btn btn-primary w-full">Vote on {toVote[0].name}</button>}
         </Empty>
         <VoteList v={v} />

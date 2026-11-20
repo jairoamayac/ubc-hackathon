@@ -168,7 +168,8 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
           <section className="hero-lilac p-5" aria-live="polite">
             <span className="pointer-events-none absolute -right-1 -top-1"><Icon3D name="padlock-key" size={80} glow /></span>
             <p className="text-sm">Summary</p>
-            <p className="mt-1 max-w-[75%] text-xl font-medium leading-tight">{goal.trim()}, by {dateLabel(endsAt)}</p>
+            <p className="mt-1 max-w-[75%] text-xl font-medium leading-tight">{goal.trim()}</p>
+            <p className="mt-1 text-sm">Ends {dateLabel(endsAt)}</p>
             <p className="mt-3 flex items-center gap-3"><span className="num text-[40px] leading-none">{usd(stake)}</span><LockedPill /></p>
             <ul className="mt-4 space-y-2 text-sm">
               <li className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden /> Keep it and your {usd(stake)} comes back. Missed stakes are split with friends who kept theirs.</li>
