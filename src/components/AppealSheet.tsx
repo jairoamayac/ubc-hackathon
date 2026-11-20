@@ -4,15 +4,17 @@
 // DEMO: the review is simulated on the device. Nothing is uploaded, the verdict is chosen with the
 // demo control below, and it does not change the result or anyone's money. In production an accepted
 // appeal is reviewed by Grok Bot and its decision is recorded with the result (docs/architecture-v2.md §5, row 4).
-import { Check, ImagePlus, Loader2, ShieldCheck, X } from "lucide-react";
+import { Check, ImagePlus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChallengeView } from "@/lib/house-money/solana/live";
+import { Check3 } from "./demo/parts";
 import { usd } from "./ui";
 
 type Reason = { label: string; ok: boolean; detail: string };
 type Verdict = { accepted: boolean; headline: string; reasons: Reason[] };
 
-const REVIEW_MS = 2200;
+const STEP_STEPS = ["Dispute opened", "Detected on-chain", "Grok Bot is reviewing…"];
+const STEP_DELAYS = [700, 900, 2300];
 
 function simulateReview(goal: string, accepted: boolean): Verdict {
   if (accepted) {
@@ -58,21 +60,33 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
     setPreview(urlRef.current);
   };
 
+  // Simulated states, same wording as the real flow: opened, detected on-chain, Grok Bot reviewing, proposal.
+  const [step, setStep] = useState(0);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
   const send = () => {
     if (!file || phase !== "form") return;
     setPhase("reviewing");
-    setTimeout(() => {
-      setVerdict(simulateReview(goal, demoAccepts));
-      setPhase("done");
-    }, REVIEW_MS);
+    setStep(0);
+    let at = 0;
+    STEP_DELAYS.forEach((delay, i) => {
+      at += delay;
+      timers.current.push(setTimeout(() => {
+        if (i < STEP_STEPS.length - 1) setStep(i + 1);
+        else {
+          setVerdict(simulateReview(goal, demoAccepts));
+          setPhase("done");
+        }
+      }, at));
+    });
   };
 
   if (phase === "reviewing") {
     return (
-      <div className="space-y-4 py-6 text-center" role="status" aria-live="polite">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-forest" aria-hidden />
+      <div className="space-y-5 py-2" role="status" aria-live="polite">
         <p className="font-medium">Grok is reviewing your proof</p>
-        <p className="text-sm text-muted">Checking the goal, the date and the details.</p>
+        <Check3 items={STEP_STEPS} step={step} />
+        <p className="text-xs text-muted">Simulated for the demo. <span className="rounded-md bg-stone px-1.5 py-0.5 text-[10px] uppercase tracking-widest">Demo</span></p>
       </div>
     );
   }
@@ -103,7 +117,8 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
             </li>
           ))}
         </ul>
-        <p className="text-xs text-muted">Demo only. This verdict is simulated and does not change the result or your money yet. In the real product the decision is recorded together with the result.</p>
+        <p className="text-sm text-muted">Next, your group confirms Grok&apos;s proposal. In the real product the decision is recorded together with the result.</p>
+        <p className="text-xs text-muted">Demo only. This verdict is simulated and does not change the result or your money.</p>
         <button onClick={onClose} className="btn btn-quiet w-full">Close</button>
       </div>
     );

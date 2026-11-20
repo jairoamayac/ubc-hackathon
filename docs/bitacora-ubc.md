@@ -28,6 +28,17 @@ Extracto público de la bitácora del equipo. Solo incluye lo del 20/11 sobre br
 - GitHub, rama `feat/kept-frontend` (no `main`): se agregaron `docs/branding-kit-agentes.md` (kit v0.2) y `docs/bitacora-ubc.md` (extracto). `docs/frontend-log.md` ya estaba.
 - No se publicó nada en X, no se gastó dinero, no se tocaron permisos ni el programa de Solana.
 
+## 2026-11-20 (Claude, sesión de Martín) segunda tanda del front: demo offline, monto sin chips, coach
+- Pedido de Martín: seguir construyendo todo el front sin parar, con la spec técnica que está en Drive ("Kept: spec técnica, backlog y milestones", sección 13, decisiones de producto del 20/11).
+- Leído en Drive (solo lectura): "Ideación Consumer Apps UBC" y la spec técnica. Ahí la sección 13 reemplaza los chips de $10, $20 y $50 y el 60/40 que se habían usado antes. Lo corregí.
+- Rama `feat/kept-frontend` (commit `030640a` y los siguientes). No se tocó `main` ni se abrió PR.
+- Nuevo `/demo`: recorrido de 75 segundos sin backend ni red, con las 10 pantallas, 5 personas con $50 cada una, pozo $250, Martin cobra $121,25 (comisión $7,50), disputa de Ben, apelación con Grok Bot por estados, 3 de 4 confirmaciones. Tecla D, "Play all" y reset. Todo simulado y rotulado.
+- Monto sin chips ("How much would it hurt to lose?"), sugerencia de Grok, aviso debajo de $50 y confirmación extra arriba de 3 veces lo sugerido. Coach de metas medibles (reglas locales). Regla de reparto en un módulo puro con chequeo (`scripts/check-settlement.mts`).
+- App real: la apelación muestra los mismos estados que el flujo de Grok Bot (simulados), banner de meta en riesgo con menos de 24 horas, link a `/demo` en el onboarding.
+- Verificación: lint limpio, build en copia con fuentes stub (compila y prerenderiza `/` y `/demo`), chequeo del reparto, y recorrido de `/demo` en Chrome sin pantalla: sin errores de consola y sin las palabras wallet, seed, token ni 0x. No se probó la app real contra devnet ni en un teléfono.
+- Documentado en `docs/frontend-log.md` (sección "Second pass") y README ("Try the demo").
+- No se publicó nada en X, no se gastó dinero, no se tocaron permisos ni el programa de Solana.
+
 ## Reglas que respeté
 - Hechos, hipótesis y opiniones van separados y marcados.
 - Ninguna idea de producto figura como elegida salvo la que Jairo y el equipo ya documentaron en el repo (Kept, antes Burn the Boats).
@@ -37,4 +48,4 @@ Extracto público de la bitácora del equipo. Solo incluye lo del 20/11 sobre br
 
 ## Pendientes abiertos (branding y front)
 Para el branding: chequear dominio, usuario de X y Devpost para Kept, y dibujar el logo definitivo.
-Para el front de Kept: que Josué revise y mergee la rama `feat/kept-frontend`, decidir 95/5 o 60/40, probar las pantallas en un navegador contra devnet y conectar la apelación a Grok Bot.
+Para el front de Kept: que Josué revise y mergee la rama `feat/kept-frontend`, probar la app real en un navegador contra devnet y en un teléfono, conectar la apelación al Grok Bot real (M7) y decidir lo abierto de la spec (rendimiento, abandonar antes, bloqueo por no votar).

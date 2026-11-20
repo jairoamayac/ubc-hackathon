@@ -217,6 +217,12 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
         <span className={`shrink-0 rounded-full px-3 py-0.5 text-sm ${open ? "bg-mint text-forest" : settled ? "border border-stone text-muted" : "bg-forest text-white"}`}>{status}</span>
       </div>
 
+      {open && amIn && ch.endsAt - now < 86400 && (
+        <p role="status" className="rounded-xl border border-forest bg-mint px-4 py-3 text-sm text-forest">
+          <span className="font-medium">Your goal is at risk.</span> Less than a day left. Do the thing, your friends will check.
+        </p>
+      )}
+
       <ul className="divide-y divide-stone" aria-label="Goals in this pact">
         {c.entries.map((e) => {
           const st = e.entry.status;

@@ -13,6 +13,10 @@ Built for the UBC Hackathon 2026 (Consumer Applications track, Best use of Solan
 - **Live demo:** https://house-money-ubc.jairoamayac.workers.dev
 - **Docs:** [why it exists](docs/context.md) · [architecture (built vs. to build)](docs/architecture-v2.md) · [decisions](docs/decisions.md) · [demo and pitch script](docs/demo.md) · [brand](docs/brand.md)
 
+## Try the demo
+
+Open `/demo` for the whole story in 75 seconds, offline and simulated: five friends, $50 each, a disputed proof, a Grok Bot proposal, and a payout. Press **D** for the next step, or **Demo controls > Play all**.
+
 ## Try it
 
 1. Open the demo group: https://house-money-ubc.jairoamayac.workers.dev/?crew=3diKfFoUCuuStkNvsZvwxYumshkZJ4k8SUTTKHYMrUw1 (Leo, Maya and Josh are already in, with a live commitment).
