@@ -20,6 +20,8 @@ const YEAR = 31_536_000;
 const POLL_MS = 45_000;
 /** How long an unknown group link spins before we say it does not exist. */
 const GROUP_WAIT_MS = 8_000;
+/** How long the first load may spin before we say we are still trying. */
+const LOAD_NOTICE_MS = 7_000;
 
 export default function CrewsApp() {
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
@@ -31,6 +33,7 @@ export default function CrewsApp() {
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
   const [now, setNow] = useState(0);
   const [trouble, setTrouble] = useState(false); // first load keeps failing (rate limits, offline)
+  const [slowLoad, setSlowLoad] = useState(false); // first load is taking a while
   const [missing, setMissing] = useState<string | null>(null); // group link we gave up on
   // After Apple Pay the new balance can lag behind the chain for a few seconds: never show less than we just added.
   const [cashHint, setCashHint] = useState<{ min: number; until: number } | null>(null);
@@ -100,6 +103,14 @@ export default function CrewsApp() {
     return () => timers.current.forEach(clearTimeout);
   }, []);
 
+  // The first load can sit behind retries for a long time (rate limits): tell people after a few seconds.
+  const loaded = !!snap;
+  useEffect(() => {
+    if (loaded) return;
+    const t = setTimeout(() => setSlowLoad(true), LOAD_NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [loaded]);
+
   // Slow poll with backoff when it fails, paused while the tab is hidden, refreshed when you come back.
   useEffect(() => {
     if (!client) return;
@@ -135,14 +146,14 @@ export default function CrewsApp() {
   const snapReady = !!snap;
   const groupFound = !!(wantKey && snap?.crews.some((c) => c.address.toBase58() === wantKey));
   useEffect(() => {
-    if (!wantKey || !snapReady || groupFound) return;
+    if (!wantKey || !snapReady || groupFound || missing === wantKey) return; // "Try again" clears `missing`, which re-arms this
     const giveUp = setTimeout(() => setMissing(wantKey), GROUP_WAIT_MS);
     const poll = setInterval(() => void refresh(), 3_000);
     return () => {
       clearTimeout(giveUp);
       clearInterval(poll);
     };
-  }, [wantKey, snapReady, groupFound, refresh]);
+  }, [wantKey, snapReady, groupFound, missing, refresh]);
 
   useEffect(() => {
     const tick = () => setNow(Date.now() / 1000);
@@ -217,7 +228,7 @@ export default function CrewsApp() {
       {!snap ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-muted" role="status">
           <span className="flex items-center gap-2"><Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Loading</span>
-          {trouble && (
+          {(trouble || slowLoad) && (
             <>
               <span className="text-sm">We&apos;re having trouble connecting. Still trying.</span>
               <button onClick={() => (client ? void refresh() : location.reload())} className="btn btn-quiet">Try again</button>
