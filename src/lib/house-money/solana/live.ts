@@ -7,7 +7,7 @@ import bs58 from "bs58";
 import { Buffer } from "buffer";
 import * as hm from "./hm";
 
-export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string; kamino?: { market: string; reserve: string; pythOracle: string } | null }
+export interface AppConfig { rpc: string; fallbackRpc?: string | null; mint: string; sponsor: string; programId: string; kamino?: { market: string; reserve: string; pythOracle: string } | null }
 
 export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
@@ -117,6 +117,23 @@ function friendly(msg: string) {
   return msg;
 }
 
+/**
+ * With a private RPC (QuickNode behind the Worker's /api/rpc), any call it can't serve (down, rate
+ * limited, a method it doesn't forward) retries once on the public RPC, so the app never stalls on it.
+ */
+function rpcFetch(fallback?: string | null): typeof fetch | undefined {
+  if (!fallback) return undefined;
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const r = await fetch(input, init);
+      if (r.ok) return r;
+    } catch {
+      // fall through to the public RPC
+    }
+    return fetch(fallback, init);
+  }) as typeof fetch;
+}
+
 export class LiveClient {
   readonly owner: Keypair;
   private conn: Connection;
@@ -125,9 +142,15 @@ export class LiveClient {
   /** Kamino Lend reserve where locked money earns interest while a pact runs (null: pots stay idle). */
   readonly kamino: hm.KaminoReserve | null;
 
+  private readonly rpcUrl: string;
+  private readonly privateRpc: boolean;
+  private fee = { price: hm.BASE_CU_PRICE, at: 0 };
+
   private constructor(cfg: AppConfig) {
+    this.rpcUrl = cfg.rpc;
+    this.privateRpc = !!cfg.fallbackRpc;
     this.owner = loadAccount();
-    this.conn = new Connection(cfg.rpc, "confirmed");
+    this.conn = new Connection(cfg.rpc, { commitment: "confirmed", fetch: rpcFetch(cfg.fallbackRpc) });
     this.mint = new PublicKey(cfg.mint);
     this.sponsor = new PublicKey(cfg.sponsor);
     this.kamino = cfg.kamino
@@ -430,10 +453,34 @@ export class LiveClient {
     return this.claimChallenge(crew, ch.address, view.feeTaken);
   }
 
+  /**
+   * Priority fee for the next transaction. With the private RPC, QuickNode's Priority Fee API gives the
+   * live "recommended" price for transactions touching Kept (cached 30 s); it is clamped between the
+   * default and the cap the sponsor Worker accepts. Without it, or on any error, the default.
+   */
+  private async priorityPrice(): Promise<number> {
+    if (!this.privateRpc) return hm.BASE_CU_PRICE;
+    if (Date.now() - this.fee.at < 30_000) return this.fee.price;
+    let price = hm.BASE_CU_PRICE;
+    try {
+      const r = await fetch(this.rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "qn_estimatePriorityFees", params: { last_n_blocks: 100, account: hm.PROGRAM_ID.toBase58(), api_version: 2 } }),
+      });
+      const rec = Number(((await r.json()) as { result?: { recommended?: number } }).result?.recommended);
+      if (Number.isFinite(rec) && rec > 0) price = Math.min(Math.max(rec, hm.BASE_CU_PRICE), hm.MAX_CU_PRICE);
+    } catch {
+      // keep the default
+    }
+    this.fee = { price, at: Date.now() };
+    return price;
+  }
+
   private async send(ixs: TransactionInstruction[]) {
-    const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
+    const [{ blockhash, lastValidBlockHeight }, price] = await Promise.all([this.conn.getLatestBlockhash("confirmed"), this.priorityPrice()]);
     const usesKamino = ixs.some((i) => i.programId.equals(hm.KLEND_PROGRAM_ID));
-    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(usesKamino ? 400_000 : 120_000), ...ixs);
+    const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(usesKamino ? 400_000 : 120_000, price), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
     if (needsOwner) tx.partialSign(this.owner);
     const b64 = tx.serialize({ requireAllSignatures: false }).toString("base64");

@@ -9,9 +9,12 @@ export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && proce
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
 /** Priority fee so transactions land when devnet is busy (paid by the sponsor). */
-export const priorityIxs = (units = 120_000) => [
+/** Default priority fee (µlamports per compute unit) and the most the sponsor Worker will co-sign. */
+export const BASE_CU_PRICE = 200_000;
+export const MAX_CU_PRICE = 1_000_000;
+export const priorityIxs = (units = 120_000, microLamports = BASE_CU_PRICE) => [
   ComputeBudgetProgram.setComputeUnitLimit({ units }),
-  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Math.min(Math.max(Math.round(microLamports), BASE_CU_PRICE), MAX_CU_PRICE) }),
 ];
 
 const IX = {
