@@ -147,7 +147,8 @@ function Session({ children }: { children: ReactNode }) {
     localStorage.removeItem(KEY_OWNER);
     await logout();
   }, [logout]);
-  const value = useMemo(() => ({ kind: "privy" as const, signer, signOut }), [signer, signOut]);
+  const email = user?.email?.address;
+  const value = useMemo(() => ({ kind: "privy" as const, signer, signOut, email }), [signer, signOut, email]);
 
   if (!ready) {
     // Never switch to a hidden device-only account: money put there would not be in the person's real account.

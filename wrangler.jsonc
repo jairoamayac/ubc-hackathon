@@ -12,7 +12,7 @@
     "directory": "./out",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/.well-known/*"]
   },
   // Grok Bot appeals council (worker/grok.ts). Stores disputes and the proof screenshot for 7 days.
   // Wrangler 4.45+ creates this namespace on the first deploy. On older versions run
@@ -26,7 +26,12 @@
     { "name": "TOPUP_LIMIT", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
     { "name": "RPC_LIMIT", "namespace_id": "1003", "simple": { "limit": 600, "period": 60 } }
   ],
+  // Crossmint onramp (docs/ONRAMP.md). Secret: npx wrangler secret put CROSSMINT_SERVER_KEY (sk_staging_...).
+  // Apple Pay domain file: worker/apple-developer-merchantid-domain-association.txt (committed, served by the Worker);
+  // optional override: npx wrangler secret put CROSSMINT_APPLE_PAY_DOMAIN_FILE.
+  // Credits are remembered in the DISPUTES namespace under "onramp:" keys, so no new namespace is needed.
   "vars": {
+    "CROSSMINT_ENV": "staging",
     "RPC_URL": "https://api.devnet.solana.com",
     "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn",
     // Kamino Lend on devnet (public addresses): market, hmUSD reserve, Pyth USDC/USD feed. Locked pots earn here.

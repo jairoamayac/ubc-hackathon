@@ -11,6 +11,8 @@ export interface Auth {
   /** The account that signs. Undefined in local mode: LiveClient then uses the key kept on this device. */
   signer?: OwnerSigner;
   signOut?: () => Promise<void>;
+  /** The email the person signed in with (Privy mode). Prefills card payments. */
+  email?: string;
 }
 
 export const AuthContext = createContext<Auth>({ kind: "local" });
@@ -18,3 +20,6 @@ export const useAuth = () => useContext(AuthContext);
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "";
 export const PRIVY_CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID ?? "";
+
+/** Crossmint client key (public). Without it, Add funds keeps the simulated Apple Pay sheet. */
+export const CROSSMINT_CLIENT_KEY = process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_KEY ?? "";
