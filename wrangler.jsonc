@@ -14,6 +14,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  // Grok Bot appeals council (worker/grok.ts). Stores disputes and the proof screenshot for 7 days.
+  // Wrangler 4.45+ creates this namespace on the first deploy. On older versions run
+  // `npx wrangler kv namespace create DISPUTES` and add "id" here.
+  // Secrets (never commit them): npx wrangler secret put GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY,
+  // and, if the QuickNode Stream is used, QUICKNODE_STREAM_SECRET.
+  "kv_namespaces": [{ "binding": "DISPUTES" }],
   "vars": {
     "RPC_URL": "https://api.devnet.solana.com",
     "MINT": "FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn"

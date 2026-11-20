@@ -46,8 +46,14 @@ export function Header({ title, onBack, right }: { title?: string; onBack?: () =
   );
 }
 
+/** Kept wordmark with the pinky-promise app icon (docs/brand/kept-lila/logo-pinky). */
 export function Wordmark() {
-  return <span className="flex items-center gap-2 text-lg font-medium tracking-tight"><span className="h-2 w-2 rounded-full bg-forest" aria-hidden /> Kept</span>;
+  return (
+    <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/kept/logo/kept-icon-180.png" width={28} height={28} alt="" aria-hidden draggable={false} className="h-7 w-7 shrink-0 select-none" /> Kept
+    </span>
+  );
 }
 
 export function BottomNav({ tab, onTab, groupDisabled }: { tab: Tab; onTab: (t: Tab) => void; groupDisabled?: boolean }) {

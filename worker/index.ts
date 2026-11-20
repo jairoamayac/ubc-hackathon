@@ -3,6 +3,7 @@
 //   POST /api/topup    simulated Apple Pay: returns a sponsor-signed transfer of test dollars (hmUSD)
 //   POST /api/sponsor  vets and co-signs a transaction as fee payer, so people never hold SOL
 //   POST /api/rpc      JSON-RPC proxy to a private RPC (QuickNode), only when QUICKNODE_URL is set
+//   /api/appeal, /api/grok/verdict, /api/disputes/:id, /api/streams/quicknode: Grok Bot appeals council (worker/grok.ts)
 // The Worker only signs; the app submits to the RPC (public RPCs block datacenter IPs).
 // With QUICKNODE_URL (a Worker secret, never sent to browsers) the app talks to /api/rpc, which forwards a
 // short allowlist of read and send methods; RPC_URL stays as the public fallback the app uses if the proxy fails.
@@ -14,8 +15,9 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import { MAX_CU_PRICE as HM_MAX_CU_PRICE, PROGRAM_ID, SOCIAL_PAYER_IXS, priorityIxs } from "../src/lib/house-money/solana/hm";
+import { handleGrok, type GrokEnv } from "./grok";
 
-interface Env {
+interface Env extends GrokEnv {
   ASSETS: { fetch: (r: Request) => Promise<Response> };
   SPONSOR_KEY: string;
   RPC_URL: string;
@@ -81,6 +83,9 @@ const worker = {
     const url = new URL(req.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
     try {
+      // Grok Bot appeals council. These routes do not need the sponsor key and never sign anything.
+      const grok = await handleGrok(req, url, env);
+      if (grok) return grok;
       const sponsor = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(env.SPONSOR_KEY)));
       const mint = new PublicKey(env.MINT);
 
