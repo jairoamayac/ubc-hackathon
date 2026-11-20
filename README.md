@@ -8,6 +8,7 @@ Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md); 
 
 - **Live demo:** https://house-money-ubc.jairoamayac.workers.dev
 - **Demo group** (open about 12 hours): https://house-money-ubc.jairoamayac.workers.dev/?crew=WUnPRfgz8KsUdFcJBYzPYQM6UpFTKxryKnFQj4NEu8a
+- **Devnet proof:** [every escrow, pact and payout with explorer links](docs/devnet-proof.md)
 - **Docs:** [why it exists](docs/context.md) · [architecture](docs/architecture.md) · [decisions](docs/decisions.md) · [demo and pitch](docs/demo.md)
 
 ## Try it
