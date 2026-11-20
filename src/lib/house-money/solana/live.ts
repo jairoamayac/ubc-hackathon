@@ -6,6 +6,7 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import bs58 from "bs58";
 import { Buffer } from "buffer";
 import * as hm from "./hm";
+import { createRpcFetch } from "./rpc-fetch";
 
 export interface AppConfig { rpc: string; mint: string; sponsor: string; programId: string }
 
@@ -79,6 +80,8 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return data;
 }
 
+const TROUBLE = "We're having trouble connecting right now. Please try again in a moment.";
+
 function friendly(msg: string) {
   if (msg.includes("BetClosed")) return "That one is closed already.";
   if (msg.includes("BetStillOpen")) return "Voting opens when time is up.";
@@ -94,9 +97,16 @@ function friendly(msg: string) {
   if (msg.includes("CallNotExpired")) return "Your call is still running.";
   if (msg.includes("CallOpen")) return "Finish your open call first.";
   if (msg.includes("insufficient funds")) return "Not enough cash. Add money first.";
+  // Infrastructure hiccups (rate limits, offline, timeouts): never show the raw server answer to people.
+  if (/\b(429|50[234])\b|too many requests|rate limit|jsonrpc|failed to fetch|fetch failed|networkerror|network request failed|load failed|timed? ?out|econn|socket hang up|getlatestblockhash|failed to get/i.test(msg)) return TROUBLE;
   // Never show chain internals to people (brand rule: no crypto jargon).
   if (/transaction|blockhash|signature|lamport|account|program|instruction|simulation|0x[0-9a-f]/i.test(msg)) return "Something went wrong. Try again.";
   return msg;
+}
+
+/** Plain-language message for anything thrown by the client (safe to show in a toast). */
+export function friendlyError(e: unknown): string {
+  return friendly(e instanceof Error ? e.message : String(e));
 }
 
 export class LiveClient {
@@ -107,9 +117,25 @@ export class LiveClient {
 
   private constructor(cfg: AppConfig) {
     this.owner = loadAccount();
-    this.conn = new Connection(cfg.rpc, "confirmed");
+    // Polite RPC: throttled, de-duplicated, shared 429 backoff (see rpc-fetch.ts). web3.js' own retry is off.
+    this.conn = new Connection(cfg.rpc, { commitment: "confirmed", fetch: createRpcFetch(), disableRetryOnRateLimit: true });
     this.mint = new PublicKey(cfg.mint);
     this.sponsor = new PublicKey(cfg.sponsor);
+  }
+
+  /** Callers that ask for the same read at the same time (timers, refreshes after actions) share one round of requests. */
+  private inflight = new Map<string, Promise<unknown>>();
+  private once<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    let p = this.inflight.get(key) as Promise<T> | undefined;
+    if (!p) {
+      p = fn()
+        .catch((e) => {
+          throw new Error(friendlyError(e));
+        })
+        .finally(() => this.inflight.delete(key));
+      this.inflight.set(key, p);
+    }
+    return p;
   }
 
   static async connect() {
@@ -117,7 +143,10 @@ export class LiveClient {
   }
 
   /** One round of reads: cash, every crew (for the leaderboard), my memberships, my open call, SOL price. */
-  async snapshot(): Promise<Snapshot> {
+  snapshot(): Promise<Snapshot> {
+    return this.once("snapshot", () => this.readSnapshot());
+  }
+  private async readSnapshot(): Promise<Snapshot> {
     const me = this.owner.publicKey;
     const ata = getAssociatedTokenAddressSync(this.mint, me);
     const [crewAccs, memberAccs, infos] = await Promise.all([
@@ -176,9 +205,13 @@ export class LiveClient {
 
   // ------------------------------------------------------------ actions
   async topUp(usd: number) {
-    const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
-    const { tx } = await api<{ tx: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd, blockhash });
-    return this.submit(tx, lastValidBlockHeight);
+    try {
+      const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
+      const { tx } = await api<{ tx: string }>("/api/topup", { owner: this.owner.publicKey.toBase58(), amount: usd, blockhash });
+      return await this.submit(tx, lastValidBlockHeight);
+    } catch (e) {
+      throw new Error(friendlyError(e));
+    }
   }
 
   createCrew(name: string, emoji: string, id: bigint = BigInt(Date.now())) {
@@ -220,7 +253,10 @@ export class LiveClient {
   }
 
   /** Everything the crew screen needs: people with names, bets and challenges with my position and votes. */
-  async crewDetail(crew: PublicKey): Promise<CrewDetail> {
+  crewDetail(crew: PublicKey): Promise<CrewDetail> {
+    return this.once(`detail:${crew.toBase58()}`, () => this.readCrewDetail(crew));
+  }
+  private async readCrewDetail(crew: PublicKey): Promise<CrewDetail> {
     const me = this.owner.publicKey;
     const [members, bets, challenges, crewInfo, vaultInfo] = await Promise.all([
       this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.ACCOUNT_DISC.Member, 8, crew) }),
@@ -229,7 +265,8 @@ export class LiveClient {
       this.conn.getAccountInfo(crew),
       this.conn.getAccountInfo(hm.crewVaultPda(crew)),
     ]);
-    const c = hm.decodeCrew(crew, crewInfo!.data);
+    if (!crewInfo) throw new Error("That group could not be found.");
+    const c = hm.decodeCrew(crew, crewInfo.data);
     const vault = vaultInfo ? vaultInfo.data.readBigUInt64LE(64) : 0n;
     const usd = (shares: bigint) => hm.toUsd(hm.assetsForShares(shares, c.totalShares, vault));
     const ms = members.map((a) => hm.decodeMember(a.pubkey, a.account.data));
@@ -382,6 +419,15 @@ export class LiveClient {
   }
 
   private async send(ixs: TransactionInstruction[]) {
+    try {
+      return await this.sendOnce(ixs);
+    } catch (e) {
+      // Whatever went wrong underneath (rate limits, offline, a rejected request), people get plain words.
+      throw new Error(friendlyError(e));
+    }
+  }
+
+  private async sendOnce(ixs: TransactionInstruction[]) {
     const { blockhash, lastValidBlockHeight } = await this.conn.getLatestBlockhash("confirmed");
     const tx = new Transaction({ feePayer: this.sponsor, blockhash, lastValidBlockHeight }).add(...hm.priorityIxs(), ...ixs);
     const needsOwner = ixs.some((i) => i.keys.some((k) => k.isSigner && k.pubkey.equals(this.owner.publicKey)));
