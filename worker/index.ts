@@ -2,7 +2,10 @@
 //   GET  /api/config   cluster, mint and sponsor the app should use
 //   POST /api/topup    simulated Apple Pay: returns a sponsor-signed transfer of test dollars (hmUSD)
 //   POST /api/sponsor  vets and co-signs a transaction as fee payer, so people never hold SOL
+//   POST /api/rpc      JSON-RPC proxy to a private RPC (QuickNode), only when QUICKNODE_URL is set
 // The Worker only signs; the app submits to the RPC (public RPCs block datacenter IPs).
+// With QUICKNODE_URL (a Worker secret, never sent to browsers) the app talks to /api/rpc, which forwards a
+// short allowlist of read and send methods; RPC_URL stays as the public fallback the app uses if the proxy fails.
 // The sponsor key lives in a Worker secret (SPONSOR_KEY). Devnet only.
 import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import {
@@ -10,13 +13,19 @@ import {
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { PROGRAM_ID, SOCIAL_PAYER_IXS, priorityIxs } from "../src/lib/house-money/solana/hm";
+import { MAX_CU_PRICE as HM_MAX_CU_PRICE, PROGRAM_ID, SOCIAL_PAYER_IXS, priorityIxs } from "../src/lib/house-money/solana/hm";
 
 interface Env {
   ASSETS: { fetch: (r: Request) => Promise<Response> };
   SPONSOR_KEY: string;
   RPC_URL: string;
+  /** Private RPC endpoint (QuickNode), with its token. Secret: `npx wrangler secret put QUICKNODE_URL`. */
+  QUICKNODE_URL?: string;
   MINT: string;
+  /** Kamino Lend market, hmUSD reserve and its Pyth feed (optional: without them pots stay idle). */
+  KAMINO_MARKET?: string;
+  KAMINO_RESERVE?: string;
+  KAMINO_ORACLE?: string;
 }
 
 const COMPUTE_BUDGET = new PublicKey("ComputeBudget111111111111111111111111111111");
@@ -28,10 +37,38 @@ const PAYER_IXS = new Set([
   "153,26,89,45,252,243,183,62",
   "58,230,6,58,104,245,154,227",
   ...SOCIAL_PAYER_IXS,
+  // kamino_supply / kamino_redeem: the sponsor is the operator. The program only lets these move a pot's
+  // own dollars between its vault and cTokens owned by the pot's PDA, never anywhere else.
+  "145,46,142,2,176,57,162,159",
+  "143,225,240,130,123,5,160,84",
 ]);
+const KLEND = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
+const KLEND_REFRESH_RESERVE = "2,218,138,235,79,201,25,102";
 const MAX_TOPUP_USD = 500;
 const MAX_CU = 400_000;
-const MAX_CU_PRICE = 1_000_000n; // µlamports per compute unit
+const MAX_CU_PRICE = BigInt(HM_MAX_CU_PRICE); // µlamports per compute unit
+
+// Everything the app and its libraries call. No airdrops, no heavy history scans.
+const RPC_METHODS = new Set([
+  "getAccountInfo", "getMultipleAccounts", "getProgramAccounts", "getBalance", "getTokenAccountBalance",
+  "getTokenAccountsByOwner", "getLatestBlockhash", "getBlockHeight", "getSlot", "getSignatureStatuses",
+  "getMinimumBalanceForRentExemption", "getEpochInfo", "getVersion", "getHealth", "getGenesisHash",
+  "getFeeForMessage", "isBlockhashValid", "sendTransaction", "simulateTransaction",
+  // QuickNode Priority Fee API add-on: live fee estimates so transactions land when the network is busy.
+  "qn_estimatePriorityFees",
+]);
+const MAX_RPC_BODY = 64 * 1024;
+const MAX_RPC_BATCH = 20;
+
+/** Why a JSON-RPC call may not go through the proxy, or null if it may. */
+function vetRpc(call: unknown): string | null {
+  const c = call as { jsonrpc?: string; method?: unknown; params?: unknown[] };
+  if (!c || c.jsonrpc !== "2.0" || typeof c.method !== "string") return "Not a JSON-RPC 2.0 call.";
+  if (!RPC_METHODS.has(c.method)) return `Method ${c.method} is not available.`;
+  // Program-wide scans are the expensive call: only ours.
+  if (c.method === "getProgramAccounts" && c.params?.[0] !== PROGRAM_ID.toBase58()) return "Only Kept accounts can be listed.";
+  return null;
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -49,10 +86,37 @@ const worker = {
 
       if (url.pathname === "/api/config" && req.method === "GET") {
         return json({
-          rpc: env.RPC_URL,
+          rpc: env.QUICKNODE_URL ? `${url.origin}/api/rpc` : env.RPC_URL,
+          fallbackRpc: env.QUICKNODE_URL ? env.RPC_URL : null,
           mint: mint.toBase58(),
           sponsor: sponsor.publicKey.toBase58(),
           programId: PROGRAM_ID.toBase58(),
+          kamino: env.KAMINO_RESERVE && env.KAMINO_MARKET && env.KAMINO_ORACLE
+            ? { market: env.KAMINO_MARKET, reserve: env.KAMINO_RESERVE, pythOracle: env.KAMINO_ORACLE }
+            : null,
+        });
+      }
+
+      if (url.pathname === "/api/rpc" && req.method === "POST") {
+        if (!env.QUICKNODE_URL) return json({ error: "No private RPC configured." }, 404);
+        const text = await req.text();
+        if (text.length > MAX_RPC_BODY) return json({ error: "Request too large." }, 413);
+        let body: unknown;
+        try {
+          body = JSON.parse(text);
+        } catch {
+          return json({ error: "Invalid JSON." }, 400);
+        }
+        const calls = Array.isArray(body) ? body : [body];
+        if (calls.length === 0 || calls.length > MAX_RPC_BATCH) return json({ error: "Bad batch size." }, 400);
+        for (const c of calls) {
+          const problem = vetRpc(c);
+          if (problem) return json({ error: problem }, 403);
+        }
+        const upstream = await fetch(env.QUICKNODE_URL, { method: "POST", headers: { "content-type": "application/json" }, body: text });
+        return new Response(upstream.body, {
+          status: upstream.status,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
         });
       }
 
@@ -101,7 +165,7 @@ const b64 = (tx: Transaction) => btoa(String.fromCharCode(...tx.serialize()));
 /** Only sponsors calls to our program, and the sponsor may only appear as the rent payer. */
 function vet(tx: Transaction, sponsor: PublicKey): string | null {
   if (!tx.feePayer?.equals(sponsor)) return "Fee payer must be the sponsor.";
-  if (tx.instructions.length === 0 || tx.instructions.length > 5) return "Unexpected transaction.";
+  if (tx.instructions.length === 0 || tx.instructions.length > 9) return "Unexpected transaction.";
   for (const ix of tx.instructions) {
     if (ix.programId.equals(COMPUTE_BUDGET)) {
       // Cap what a sponsored transaction can cost: ≤ 400k CU at ≤ 1,000,000 µlamports/CU (~0.0004 SOL).
@@ -110,6 +174,11 @@ function vet(tx: Transaction, sponsor: PublicKey): string | null {
       if (kind === 2 && ix.data.length === 5 && view.getUint32(1, true) <= MAX_CU) continue;
       if (kind === 3 && ix.data.length === 9 && view.getBigUint64(1, true) <= MAX_CU_PRICE) continue;
       return "Priority fee above the sponsor's cap.";
+    }
+    if (ix.programId.equals(KLEND)) {
+      // Only Kamino's permissionless price/interest refresh, which Kamino requires before a supply or redeem.
+      if (Array.from(ix.data).join(",") === KLEND_REFRESH_RESERVE && !ix.keys.some((k) => k.pubkey.equals(sponsor))) continue;
+      return "Only Kept instructions can be sponsored.";
     }
     if (!ix.programId.equals(PROGRAM_ID)) return "Only Kept instructions can be sponsored.";
     const disc = Array.from(ix.data.subarray(0, 8)).join(",");

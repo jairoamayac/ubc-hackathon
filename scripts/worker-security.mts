@@ -61,5 +61,24 @@ await expect("top-up $10,000 (over the $500 cap)", "/api/topup", { owner: attack
 await expect("top-up to an invalid address", "/api/topup", { owner: "not-a-key", amount: 10, blockhash }, false);
 await expect("legit: top-up $25", "/api/topup", { owner: attacker.publicKey.toBase58(), amount: 25, blockhash }, true);
 
+// The private RPC proxy (only when the Worker has QUICKNODE_URL): it must not become an open relay.
+if (String(cfg.rpc).endsWith("/api/rpc")) {
+  const rpc = async (name: string, body: unknown, allowed: boolean) => {
+    const r = await fetch(`${API}/api/rpc`, { method: "POST", headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) });
+    const ok = (r.status === 200) === allowed;
+    ok ? pass++ : fail++;
+    console.log(`  ${ok ? "✓" : "✗"} rpc: ${name} → ${r.status}`);
+  };
+  const call = (method: string, params: unknown[] = []) => ({ jsonrpc: "2.0", id: 1, method, params });
+  await rpc("airdrop through our key", call("requestAirdrop", [attacker.publicKey.toBase58(), 1e9]), false);
+  await rpc("scan the whole token program", call("getProgramAccounts", ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"]), false);
+  await rpc("heavy history call", call("getSignaturesForAddress", [sponsor.toBase58()]), false);
+  await rpc("a bad call hidden in a batch", [call("getSlot"), call("requestAirdrop", [attacker.publicKey.toBase58(), 1e9])], false);
+  await rpc("a batch of 50", Array.from({ length: 50 }, () => call("getSlot")), false);
+  await rpc("garbage", "not json", false);
+  await rpc("legit: read an account", call("getAccountInfo", [sponsor.toBase58(), { encoding: "base64" }]), true);
+  await rpc("legit: list Kept crews", call("getProgramAccounts", [hm.PROGRAM_ID.toBase58(), { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

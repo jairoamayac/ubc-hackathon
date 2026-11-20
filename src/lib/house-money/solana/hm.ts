@@ -4,14 +4,17 @@ import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction,
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Buffer } from "buffer";
 
-export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
+export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1");
 /** Pyth SOL/USD PriceUpdateV2 account (sponsored feed, Solana devnet). */
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
 /** Priority fee so transactions land when devnet is busy (paid by the sponsor). */
-export const priorityIxs = () => [
-  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }),
-  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
+/** Default priority fee (µlamports per compute unit) and the most the sponsor Worker will co-sign. */
+export const BASE_CU_PRICE = 200_000;
+export const MAX_CU_PRICE = 1_000_000;
+export const priorityIxs = (units = 120_000, microLamports = BASE_CU_PRICE) => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Math.min(Math.max(Math.round(microLamports), BASE_CU_PRICE), MAX_CU_PRICE) }),
 ];
 
 const IX = {
@@ -84,6 +87,8 @@ export interface ConfigArgs {
 }
 export interface ConfigAccount extends ConfigArgs { admin: PublicKey; mint: PublicKey; priceFeed: PublicKey }
 export interface CrewAccount {
+  /** Dollars this pot has supplied to Kamino Lend and not yet redeemed (part of its assets). */
+  kaminoPrincipal: bigint;
   address: PublicKey; creator: PublicKey; crewId: bigint; name: string; emoji: string;
   totalShares: bigint; totalPrincipal: bigint; yieldPaid: bigint; members: number; createdAt: number; lastAccrual: number;
 }
@@ -110,6 +115,7 @@ export function decodeCrew(address: PublicKey, d: Uint8Array): CrewAccount {
   return {
     address, creator: r.pk(), crewId: r.u64(), name: r.str(), emoji: r.str(), totalShares: r.u64(), totalPrincipal: r.u64(),
     yieldPaid: r.u64(), members: r.u32(), createdAt: Number(r.i64()), lastAccrual: Number(r.i64()),
+    ...(() => { r.u8(); r.u8(); return { kaminoPrincipal: r.u64() }; })(),
   };
 }
 export function decodeMember(address: PublicKey, d: Uint8Array): MemberAccount {
@@ -226,12 +232,12 @@ export async function confirm(conn: Connection, signature: string, lastValidBloc
   while (Date.now() - start < timeoutMs) {
     const { value } = await conn.getSignatureStatuses([signature]);
     const st = value[0];
-    if (st?.err) throw new Error(`Transaction failed: ${JSON.stringify(st.err)}`);
+    if (st?.err) throw new Error(`Could not save that, try again. (${JSON.stringify(st.err)})`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
-    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("Transaction expired, try again.");
+    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
     await new Promise((r) => setTimeout(r, 800));
   }
-  throw new Error("Network is slow, try again.");
+  throw new Error("This is taking longer than usual, try again.");
 }
 
 // ================================================================ social layer (programs/house_money/src/social.rs)
@@ -268,7 +274,7 @@ export const SOCIAL_PAYER_IXS = [
 ].map((d) => d.join(","));
 
 export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
-export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2 } as const;
+export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2, REFUNDED: 3 } as const;
 export const NOBODY = PublicKey.default;
 
 export const profilePda = (owner: PublicKey) => pda([enc("profile"), owner.toBytes()]);

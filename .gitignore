@@ -47,3 +47,8 @@ next-env.d.ts
 /.wrangler
 .local-ledger/
 .local-validator.log
+.dev.vars
+
+# Claude Code worktrees and local settings
+/.claude/worktrees/
+/.claude/settings.local.json

@@ -122,7 +122,7 @@ export function coachGoal(input: string): Coaching {
 
 /** Amount check for the stake picker: returns what to tell the person, or null if it is fine. */
 export function stakeAdvice(stake: number, suggested: number, warnMultiple: number): { tone: "low" | "high"; text: string } | null {
-  if (stake < suggested) return { tone: "low", text: `Most people lock at least ${fmt(suggested)} so it really hurts to lose it.` };
+  if (stake < suggested) return { tone: "low", text: `Pick an amount that would sting a little, around ${fmt(suggested)}. Never lock money you need.` };
   if (stake > suggested * warnMultiple) return { tone: "high", text: `That is more than ${warnMultiple} times what we suggest. Are you sure you want to put ${fmt(stake)} on this?` };
   return null;
 }
