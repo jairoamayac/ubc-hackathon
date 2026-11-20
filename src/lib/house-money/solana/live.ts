@@ -58,6 +58,7 @@ const HIDDEN_CREWS = new Set([
   "CSWd2WW5HsqMDemMKvisVisUJ9Ad6Q3A3gdghLwRkegL",
   "GZVEhfyhC7b6T9vqucn9XiAekmsXWzfegvVqxVySWzaq",
   "AgxFcepgNhbDUDtwdzgATXzZgcTbrEpWJm5y5HeXbNn2", // e2e run before test crews were prefixed
+  "2kyNt9T5XmXAZRMKvXvtgL67DHaSBBDyZbH4vPuL7RB1", // demo seed interrupted by a devnet timeout
 ]);
 
 export function loadAccount(): Keypair {
