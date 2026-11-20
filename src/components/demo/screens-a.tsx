@@ -2,10 +2,10 @@
 
 // Demo screens, part 1: login, home, new goal wizard, group.
 import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, ChevronRight, Dumbbell, Link2, Loader2, Lock, Plus, Repeat, Sparkles, X } from "lucide-react";
-import { useMemo, useState, type Dispatch, type ReactNode } from "react";
+import { useState, type Dispatch, type ReactNode } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE, TAGLINE } from "@/lib/brand";
 import { coachGoal, type Coaching } from "@/lib/coach";
-import { GROUP_NAME, onTheLine, pot, yieldFor, type Action, type DemoState } from "@/lib/demo/store";
+import { GROUP_NAME, onTheLine, pot, type Action, type DemoState } from "@/lib/demo/store";
 import { StakePicker } from "../StakePicker";
 import { usd } from "../ui";
 import { Avatar, DemoBadge, Icon3D, LockAnimation, LockedPill, PASTEL, ScreenBody, StatusChip, TopBar, UrgencyBanner, Wordmark, timeLeft } from "./parts";
@@ -307,7 +307,7 @@ export function NewGoalScreen({ s, d, go }: ScreenProps) {
           <button disabled={tooMuch || (veryHigh && !sure)} onClick={() => setLocking(true)} className="btn btn-primary w-full py-4 text-lg">
             {tooMuch ? "Add funds first" : <><Lock className="h-5 w-5" aria-hidden /> Lock it in · {usd(stake)}</>}
           </button>
-          <p className="-mt-1 text-center text-xs text-muted">Locked in the contract, not with us.</p>
+          <p className="-mt-1 text-center text-xs text-muted">Locked by code, not held by us.</p>
         </>
       )}
     </ScreenBody>
@@ -326,7 +326,6 @@ export function GroupTabs({ active, go }: { active: "group" | "feed"; go: (r: Ro
 
 export function GroupScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
   const [copied, setCopied] = useState(false);
-  const y = useMemo(() => yieldFor(s), [s]);
   const invite = async () => {
     const url = `${location.origin}/demo?invite=austin-runners`;
     try {
@@ -353,7 +352,7 @@ export function GroupScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
           <span>{inCount} of {s.people.length} locked in</span>
           <span className="flex -space-x-2" aria-hidden>{s.people.filter((p) => p.stake > 0).map((p) => <Avatar key={p.id} id={p.id} size={28} />)}</span>
         </div>
-        {pot(s) > 0 && <p className="mt-2 text-xs">Earning about {usd(y.total)} while it waits, simulated at 4% a year <DemoBadge /></p>}
+        {pot(s) > 0 && <p className="mt-2 text-xs">Your money stays locked until the deadline.</p>}
       </section>
       <ul className="grid grid-cols-2 gap-3" aria-label="People and goals">
         {s.people.map((p, i) => (

@@ -250,7 +250,7 @@ export function LockAnimation({ onDone }: { onDone: () => void }) {
     <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-lilac text-deep">
       <div className="lock-pop"><Icon3D name="padlock-key" size={220} /></div>
       <p className="mt-4 text-[34px] font-bold tracking-tight">Locked in.</p>
-      <p className="mt-1 text-sm">Locked in the contract, not with us.</p>
+      <p className="mt-1 text-sm">Locked by code, not held by us.</p>
     </div>
   );
 }

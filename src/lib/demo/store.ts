@@ -172,7 +172,7 @@ export function reducer(s: DemoState, a: Action): DemoState {
       if (s.stage !== "appeal" || a.step <= s.disputeStep) return s;
       const stage: Stage = a.step >= 3 ? "proposed" : "appeal";
       const n: DemoState = { ...s, stage, disputeStep: a.step };
-      if (a.step === 1) return { ...n, ...say(n, "system", "Detected on-chain: DisputeOpened.", "system") };
+      if (a.step === 1) return { ...n, ...say(n, "system", "Dispute received.", "system") };
       if (a.step === 2) return { ...n, ...say(n, "grok", "Grok Bot is reviewing the proof.", "grok") };
       if (a.step === 3) return { ...n, ...say(n, "grok", "Grok Bot proposes: Approved (92%). Distance, date and route match. Group, please confirm.", "grok") };
       return n;
@@ -184,7 +184,7 @@ export function reducer(s: DemoState, a: Action): DemoState {
       n = { ...n, ...say(n, a.id, "Confirmed Grok's proposal.", "vote") };
       if (confirms.length >= CONFIRMS_NEEDED) {
         n = { ...n, stage: "resolved", disputeStep: 4, people: setPerson(n, "martin", { status: "on_track" }) };
-        n = { ...n, ...say(n, "system", "Resolved on-chain: Martin's proof was approved (3 of 4).", "system") };
+        n = { ...n, ...say(n, "system", "Decision saved: Martin's proof was approved (3 of 4).", "system") };
       }
       return n;
     }

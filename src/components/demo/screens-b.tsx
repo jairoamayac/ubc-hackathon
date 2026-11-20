@@ -4,9 +4,9 @@
 // Look: design/kept-v5 ("Lila y mandarina"). Logic and copy rules unchanged from the Forest version.
 import { Check, ImagePlus, Loader2, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FEE_PERCENT, KEEPERS_PERCENT, LEAVE_EARLY_LOSS_PERCENT, PLATFORM_YIELD_PERCENT, PROJECT_NAME } from "@/lib/brand";
+import { FEE_PERCENT, KEEPERS_PERCENT, LEAVE_EARLY_LOSS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import {
-  CONFIRMS_NEEDED, FRIENDS, GROUP_NAME, NAMES, onTheLine, pot, results, yieldFor,
+  CONFIRMS_NEEDED, FRIENDS, GROUP_NAME, NAMES, onTheLine, pot, results,
 } from "@/lib/demo/store";
 import { usd } from "../ui";
 import { GroupTabs, type ScreenProps } from "./screens-a";
@@ -223,7 +223,7 @@ export function VoteScreen({ s, d, go }: ScreenProps) {
 }
 
 // -------------------------------------------------------------------- 8 dispute and appeal
-const STEPS = ["Dispute opened", "Detected on-chain", "Grok Bot is reviewing…", "Grok Bot proposes", "Resolved on-chain"];
+const STEPS = ["Dispute opened", "Dispute received", "Grok Bot is reviewing…", "Grok Bot proposes", "Decision saved"];
 const REASONS = [
   { label: "Distance matches", detail: "21.1 km on the activity, above the 21 km goal." },
   { label: "Date is inside the window", detail: "Saturday, before the Sunday deadline." },
@@ -300,7 +300,7 @@ export function DisputeScreen({ s, d, go }: ScreenProps) {
               <div className="mt-4"><Check3 items={["Distance", "Date", "Route"]} step={checksShown} dark /></div>
             </section>
           ) : (
-            <h1 className="text-[28px] font-medium leading-tight tracking-tight">{s.stage === "resolved" || s.stage === "ended" ? "Resolved on-chain" : "Grok Bot made a proposal"}</h1>
+            <h1 className="text-[28px] font-medium leading-tight tracking-tight">{s.stage === "resolved" || s.stage === "ended" ? "Decision saved" : "Grok Bot made a proposal"}</h1>
           )}
           {s.disputeStep >= 3 && <VerdictCard confidence={92} reasons={REASONS} confirms={confirmed} needed={CONFIRMS_NEEDED} total={friends.length} />}
           <ol className="card space-y-3 p-5" aria-label="Dispute steps">
@@ -354,7 +354,6 @@ export function DisputeScreen({ s, d, go }: ScreenProps) {
 export function ResultsScreen({ s, d, go }: ScreenProps) {
   const [receipt, setReceipt] = useState(false);
   const r = useMemo(() => results(s), [s]);
-  const y = useMemo(() => yieldFor(s), [s]);
   const mine = r.payouts.find((p) => p.id === "martin");
   const confetti = useMemo(() => Array.from({ length: 28 }, (_, i) => ({ left: (i * 37) % 100, delay: (i % 7) * 0.08, color: ["#FF7A3D", "#B9A4FF", "#1A1A18", "#FFF0BF"][i % 4] })), []);
 
@@ -412,10 +411,6 @@ export function ResultsScreen({ s, d, go }: ScreenProps) {
         </section>
       </div>
       <p className="text-xs text-muted">Check: {usd(r.payouts.reduce((n, p) => n + p.payout, 0))} paid out + {usd(r.fee)} fee = {usd(r.total)} in the pot.</p>
-      <section className="pastel bg-butter p-4 text-sm" aria-label="Yield">
-        <p className="font-medium">Yield while locked <DemoBadge>Simulated</DemoBadge></p>
-        <p className="mt-1">About {usd(y.total)} over 5 days at 4% a year. {PLATFORM_YIELD_PERCENT}% of it ({usd(y.platform)}) is the platform&apos;s share. Tiny on purpose: the real money is in the stakes.</p>
-      </section>
       {s.collected ? (
         <p className="card p-4 text-sm" role="status">Collected. Your balance is {usd(s.balance)}.</p>
       ) : (
@@ -425,11 +420,11 @@ export function ResultsScreen({ s, d, go }: ScreenProps) {
       {receipt && (
         <Sheet title="Receipt" onClose={() => setReceipt(false)}>
           <dl className="space-y-2 text-sm">
-            {[["Group", GROUP_NAME], ["Pot", usd(pot(s))], ["Platform fee", `${usd(r.fee)} (${FEE_PERCENT}%)`], ["Paid to you", usd(mine.payout)], ["Decided by", "3 of 4 friends confirmed Grok Bot's proposal"], ["Recorded", "Demo receipt. In the real app this links to the public record."]].map(([k, v]) => (
+            {[["Group", GROUP_NAME], ["Pot", usd(pot(s))], ["Platform fee", `${usd(r.fee)} (${FEE_PERCENT}%)`], ["Paid to you", usd(mine.payout)], ["Decided by", "3 of 4 friends confirmed Grok Bot's proposal"], ["Saved", "Demo receipt. In the real app the decision is saved with the result."]].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-4"><dt className="text-muted">{k}</dt><dd className="text-right tabular-nums">{v}</dd></div>
             ))}
           </dl>
-          <p className="mt-4 text-xs text-muted"><DemoBadge /> Nothing here is on a real network.</p>
+          <p className="mt-4 text-xs text-muted"><DemoBadge /> Nothing here uses real money.</p>
         </Sheet>
       )}
     </ScreenBody>
