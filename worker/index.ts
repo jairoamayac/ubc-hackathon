@@ -39,12 +39,12 @@ const COMPUTE_BUDGET = new PublicKey("ComputeBudget11111111111111111111111111111
 // Only the Kept instructions the app sends get sponsored (no old calls or bets: they were rent sinks).
 const disc = (name: keyof typeof KEPT_IX) => KEPT_IX[name].join(",");
 const APP_IXS = new Set((["create_crew", "join_crew", "deposit", "withdraw", "set_profile", "create_challenge", "join_challenge",
-  "join_with_goal", "vote_entry", "finalize_entry", "take_fee", "claim_challenge", "kamino_supply", "kamino_redeem"] as const).map(disc));
+  "join_with_goal", "vote_entry", "finalize_entry", "take_fee", "claim_challenge", "open_dispute", "kamino_supply", "kamino_redeem"] as const).map(disc));
 // Of those, where account #0 may be the sponsor: it only pays rent (the program never moves its tokens), or,
 // for kamino_supply/redeem, it is the operator, which can only move a pot's own dollars between its vault
 // and cTokens owned by the pot's PDA. The supply must be "the whole vault" (amount 0), as the app sends it.
 const PAYER_IXS = new Set((["create_crew", "join_crew", "set_profile", "create_challenge", "join_challenge", "vote_entry",
-  "join_with_goal", "take_fee", "kamino_supply", "kamino_redeem"] as const).map(disc));
+  "join_with_goal", "take_fee", "open_dispute", "kamino_supply", "kamino_redeem"] as const).map(disc));
 const KAMINO_SUPPLY = disc("kamino_supply");
 const KLEND = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
 const KLEND_REFRESH_RESERVE = "2,218,138,235,79,201,25,102";
