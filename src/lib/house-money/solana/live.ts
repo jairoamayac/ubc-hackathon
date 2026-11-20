@@ -14,7 +14,7 @@ export interface CrewView extends hm.CrewAccount {
   vault: number; // dollars in the pot now
   growthPct: number; // yield paid / principal
   yieldPerDay: number; // at the current (demo) rate
-  me?: { value: number; principal: number; playable: number; member: hm.MemberAccount };
+  me?: { value: number; principal: number; playable: number; member: hm.MemberAccount; /** UI only: just joined, not on the network yet */ pending?: boolean };
   /** Dollars of mine locked on pact goals here (still mine until friends confirm), same formula as the group screen. */
   locked: number;
 }
@@ -424,8 +424,7 @@ export class LiveClient {
     return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]);
   }
   /** Start a commitment round and put money on your goal in the same tap. */
-  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number) {
-    const id = BigInt(Date.now());
+  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number, id: bigint = BigInt(Date.now())) {
     const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
     const ch = hm.challengePda(crew, id);
     return this.send([

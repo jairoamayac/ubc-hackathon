@@ -43,6 +43,8 @@ export function CrewRoom(props: {
   const [trouble, setTrouble] = useState(false); // pacts keep failing to load
   // What the person just did, shown right away. These only ever go one way (collected, answered, joined),
   // so they cannot double count: as soon as fresh data shows the same thing, it wins.
+  // Pacts I just started: shown at once, replaced by the real one as soon as the network lists it.
+  const [created, setCreated] = useState<ChallengeView[]>([]);
   const [done, setDone] = useState<{ claimed: string[]; voted: string[]; joined: string[] }>({ claimed: [], voted: [], joined: [] });
   const reloadTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -103,9 +105,11 @@ export function CrewRoom(props: {
   // Fresh data plus what was just done (see above).
   const shown = useMemo<CrewDetail | null>(() => {
     if (!detail) return null;
+    const listed = new Set(detail.challenges.map((c) => c.challenge.address.toBase58()));
+    const fresh = created.filter((c) => !listed.has(c.challenge.address.toBase58()));
     return {
       ...detail,
-      challenges: detail.challenges.map((c) => {
+      challenges: [...fresh, ...detail.challenges].map((c) => {
         const addr = c.challenge.address.toBase58();
         let v = c;
         if (done.joined.includes(addr) && !v.mine) v = { ...v, joinedPending: true };
@@ -118,7 +122,7 @@ export function CrewRoom(props: {
         return entries.some((e, i) => e !== v.entries[i]) ? { ...v, entries } : v;
       }),
     };
-  }, [detail, done]);
+  }, [detail, done, created]);
 
   const me = crew.me;
   // Money locked on goals still counts as yours until your friends confirm. It comes from the same read as the
@@ -169,7 +173,7 @@ export function CrewRoom(props: {
         {me ? (
           <div className="mt-5 grid grid-cols-2 gap-3">
             <button onClick={props.onDeposit} className="btn btn-primary">Add money</button>
-            <button onClick={props.onWithdraw} className="btn btn-quiet">Take out</button>
+            <button onClick={props.onWithdraw} disabled={me.pending} className="btn btn-quiet disabled:opacity-45">Take out</button>
           </div>
         ) : (
           <button onClick={props.onDeposit} className="btn btn-primary mt-5 w-full">Join with money</button>
@@ -240,8 +244,13 @@ export function CrewRoom(props: {
             <GoalForm free={props.value} min={1} withPactSettings busy={busy === "start"} cta="Lock"
               note="Heads up: your friends have to lock money on this pact too. If you are the only one in when time is up, nobody can confirm it and your money stays locked."
               onSubmit={async ({ goal, stake, minutes, minStake }) => {
-                if (await run("start", () => client.startCommitment(crew.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, stake),
-                  `Locked ${usd(stake)} on your goal. Invite the group to join.`)) setSheet(null);
+                const id = BigInt(Date.now());
+                const title = `Pact: ${goal}`.slice(0, 80);
+                if (await run("start", () => client.startCommitment(crew.address, title, minStake, minutes, goal, stake, id),
+                  `Locked ${usd(stake)} on your goal. Invite the group to join.`)) {
+                  setCreated((l) => [...l, optimisticPact(client, crew.address, id, title, goal, stake, minStake, minutes)]);
+                  setSheet(null);
+                }
               }} />
           )}
           {sheet.id === "join" && (
@@ -261,6 +270,24 @@ export function CrewRoom(props: {
 }
 
 // ---------------------------------------------------------------- pieces
+
+/** What a pact I just started looks like, before the network lists it (one person in, nothing decided). */
+function optimisticPact(client: LiveClient, crew: PublicKey, id: bigint, title: string, goal: string, stake: number, minStake: number, minutes: number): ChallengeView {
+  const me = client.owner.publicKey;
+  const address = hm.challengePda(crew, id);
+  const entry: hm.EntryAccount = {
+    address: hm.entryPda(address, me), challenge: address, owner: me, shares: hm.fromUsd(stake), passVotes: 0, failVotes: 0, status: hm.ENTRY.PENDING, claimed: false,
+  };
+  const view = { entry, name: "You", isMe: true, goal, stakeUsd: stake };
+  return {
+    challenge: {
+      address, crew, creator: me, challengeId: id, title, stake: hm.fromUsd(minStake), endsAt: Math.floor(Date.now() / 1000) + Math.round(minutes * 60),
+      participants: 1, decided: 0, passedShares: 0n, failedShares: 0n,
+    },
+    creatorName: "You", stakeUsd: minStake, potUsd: stake, entries: [view], mine: { ...view, payoutUsd: 0, usd: stake },
+    feeTaken: false, feeUsd: 0, forfeitUsd: 0,
+  };
+}
 
 function left(seconds: number) {
   if (seconds <= 0) return "Time is up";

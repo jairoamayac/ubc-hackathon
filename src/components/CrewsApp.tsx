@@ -3,8 +3,9 @@
 // Screens: onboarding → home (your money, your groups) → group (CrewRoom: pacts, goals, confirmations) → me.
 // Sheets: Apple Pay (simulated), add to a group, take out. Brand: branding kit v0.1 ("Forest").
 import { ArrowLeft, ChevronRight, Home, Loader2, Plus, User, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
+import { memberPda } from "@/lib/house-money/solana/hm";
 import { LiveClient, friendlyError, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
@@ -26,7 +27,9 @@ const LOAD_NOTICE_MS = 7_000;
 export default function CrewsApp() {
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
   const [client, setClient] = useState<LiveClient | null>(null);
-  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [rawSnap, setSnap] = useState<Snapshot | null>(null);
+  // Groups I just joined, shown at once; the real data replaces them as soon as it lists me.
+  const [joined, setJoined] = useState<Record<string, number>>({});
   const [view, setView] = useState<View>({ id: "home" });
   const [sheet, setSheet] = useState<Sheet>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -36,8 +39,22 @@ export default function CrewsApp() {
   const [slowLoad, setSlowLoad] = useState(false); // first load is taking a while
   const [missing, setMissing] = useState<string | null>(null); // group link we gave up on
   // After Apple Pay the new balance can lag behind the chain for a few seconds: never show less than we just added.
-  const [cashHint, setCashHint] = useState<{ min: number; until: number } | null>(null);
+  // Only applied while the real balance still equals `from` (the stale value), so it can never double count.
+  const [cashAdj, setCashAdj] = useState<{ from: number; to: number; until: number } | null>(null);
   const busyRef = useRef(false);
+  const snap = useMemo(() => {
+    if (!rawSnap || !client || Object.keys(joined).length === 0) return rawSnap;
+    const owner = client.owner.publicKey;
+    return {
+      ...rawSnap,
+      crews: rawSnap.crews.map((c) => {
+        const amt = joined[c.address.toBase58()];
+        if (amt === undefined || c.me) return c;
+        const member = { address: memberPda(c.address, owner), crew: c.address, owner, shares: 0n, principal: 0n, openCall: false, callsPlayed: 0, callsWon: 0, joinedAt: Math.floor(rawSnap.now) };
+        return { ...c, members: c.members + 1, me: { value: amt, principal: amt, playable: 0, member, pending: true } };
+      }),
+    };
+  }, [rawSnap, joined, client]);
   const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
@@ -169,7 +186,7 @@ export default function CrewsApp() {
   const act: Act = async (label, fn, done) => {
     if (busyRef.current) return false; // one action at a time: no double taps
     busyRef.current = true;
-    if (label !== "topup") setCashHint(null); // real balance from here on
+    if (label !== "topup") setCashAdj(null); // real balance from here on
     setBusy(label);
     setToast(null);
     try {
@@ -206,7 +223,7 @@ export default function CrewsApp() {
   // "In your groups" = free money plus what is locked on pacts (it stays yours until friends confirm).
   const inGroups = myGroups.reduce((s, c) => s + totalValue(c, snap!, now), 0);
   const lockedAll = myGroups.reduce((s, c) => s + c.locked, 0);
-  const cash = snap ? (cashHint && now < cashHint.until ? Math.max(snap.cash, cashHint.min) : snap.cash) : 0;
+  const cash = snap ? (cashAdj && now < cashAdj.until && Math.abs(snap.cash - cashAdj.from) < 1e-9 ? cashAdj.to : snap.cash) : 0;
   const group = view.id === "group" ? snap?.crews.find((c) => c.address.toBase58() === view.key) : undefined;
   const tab = view.id === "me" ? "me" : "home";
 
@@ -361,9 +378,9 @@ export default function CrewsApp() {
         >
           {sheet.id === "applepay" && (
             <ApplePaySheet busy={busy === "topup"} onPay={async (amt) => {
-              const before = cash;
+              const shown = cash;
               const ok = await act("topup", () => client!.topUp(amt), `${usd(amt)} added.`);
-              if (ok) setCashHint({ min: before + amt, until: Date.now() / 1000 + 25 });
+              if (ok) setCashAdj({ from: snap.cash, to: shown + amt, until: Date.now() / 1000 + 25 });
               if (ok) setSheet(sheet.then ? { id: "deposit", crew: sheet.then } : null);
             }} />
           )}
@@ -371,7 +388,14 @@ export default function CrewsApp() {
             <AmountForm max={cash} cta={sheet.crew.me ? "Add money" : "Join group"} busy={busy === "deposit"}
               hint={`You have ${usd(cash)} ready to use. Money in a group stays yours until you lock it on a goal.`}
               onSubmit={async (amt) => {
-                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} added to ${sheet.crew.name}.`)) setSheet(null);
+                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} added to ${sheet.crew.name}.`)) {
+                  if (!sheet.crew.me) {
+                    // Joined: show the group as mine right away (and the money moved) while the network catches up.
+                    setJoined((j) => ({ ...j, [sheet.crew.address.toBase58()]: amt }));
+                    setCashAdj({ from: snap.cash, to: Math.max(0, cash - amt), until: Date.now() / 1000 + 25 });
+                  }
+                  setSheet(null);
+                }
               }} />
           )}
           {sheet.id === "withdraw" && sheet.crew.me && (
