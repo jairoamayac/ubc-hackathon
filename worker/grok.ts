@@ -13,6 +13,7 @@
 // The council only proposes. Nothing here signs a transaction or moves money.
 // Secrets (never in the repo): GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY, QUICKNODE_STREAM_SECRET (the Stream's security token).
 import { PROGRAM_ID } from "../src/lib/house-money/solana/hm";
+import { readPactCase } from "./pact";
 import { disputesFromText, parseDisputeEvents, readStreamBody, verifyQuickNodeSignature, type ChainDispute } from "./quicknode";
 import { isVerdict, VERDICTS, type DisputeView, type Juror, type Tally, type VerdictKind } from "../src/lib/grok";
 
@@ -27,6 +28,9 @@ export interface GrokEnv {
   GROK_WEBHOOK_URL?: string;
   GROK_WEBHOOK_KEY?: string;
   QUICKNODE_STREAM_SECRET?: string;
+  /** RPC used to read a disputed pact (private QuickNode endpoint first, public RPC as fallback). */
+  QUICKNODE_URL?: string;
+  RPC_URL?: string;
   /** Optional: public base URL the Bot should call back, if it is not this request's own origin. */
   CALLBACK_BASE?: string;
 }
@@ -236,7 +240,8 @@ function parseCoach(b: Record<string, unknown>) {
 function parseGroup(b: Record<string, unknown>) {
   const messages = (Array.isArray(b.messages) ? b.messages : []).slice(0, 8).flatMap((raw) => {
     const m = (raw ?? {}) as Record<string, unknown>;
-    const text = clip(m.text, 400);
+    // Brand: no emoji in what the app shows.
+    const text = clip(m.text, 400).replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u200D\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim();
     return text ? [{ to: clip(m.to, 60) || "all", text }] : [];
   });
   return messages.length ? { messages } : null;
@@ -452,7 +457,7 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
 interface ChainEvent extends ChainDispute {
   received_at: number;
   /** Grok council case for this dispute: linked to the app's appeal, started by this event, or why not. */
-  council: "linked" | "started" | "unavailable";
+  council: "linked" | "started" | "unavailable" | "skipped";
   dispute_id?: string;
 }
 
@@ -505,19 +510,24 @@ async function handleStream(req: Request, url: URL, env: GrokEnv): Promise<Respo
       }
     } else {
       try {
-        const out = await createDispute(env, baseUrl(env, url), {
-          challenge: ev.challenge, member: ev.member, disputer: ev.disputer,
-          goal: "Opened on-chain: read the goal from the pact.",
-          dispute_reason: "A dispute was opened on-chain and detected by QuickNode Streams.",
-        });
-        if (typeof out.body.dispute_id === "string") {
-          record.council = "started";
-          record.dispute_id = out.body.dispute_id;
-          const raw = await env.DISPUTES.get(`d:${out.body.dispute_id}`);
-          if (raw) {
-            const rec = JSON.parse(raw) as Record_;
-            rec.onchain = { signature: ev.signature, slot: ev.slot, blockTime: ev.blockTime, reason: ev.reason };
-            await env.DISPUTES.put(`d:${out.body.dispute_id}`, JSON.stringify(rec), { expirationTtl: TTL });
+        // The log only carries addresses: read the pact so the council judges the real goal, deadline and votes.
+        const rpc = env.QUICKNODE_URL || env.RPC_URL;
+        const pact = rpc ? await readPactCase(rpc, ev) : null;
+        // No goal or criterion means nothing to judge: record the event, don't spend a council run on an empty case.
+        if (!pact || !pact.goal.trim() || !pact.criterion.trim()) {
+          record.council = "skipped";
+          console.log("stream: dispute skipped, pact unreadable", ev.challenge, ev.member);
+        } else {
+          const out = await createDispute(env, baseUrl(env, url), { challenge: ev.challenge, member_key: ev.member, ...pact });
+          if (typeof out.body.dispute_id === "string") {
+            record.council = "started";
+            record.dispute_id = out.body.dispute_id;
+            const raw = await env.DISPUTES.get(`d:${out.body.dispute_id}`);
+            if (raw) {
+              const rec = JSON.parse(raw) as Record_;
+              rec.onchain = { signature: ev.signature, slot: ev.slot, blockTime: ev.blockTime, reason: ev.reason };
+              await env.DISPUTES.put(`d:${out.body.dispute_id}`, JSON.stringify(rec), { expirationTtl: TTL });
+            }
           }
         }
       } catch { /* Grok Bot unreachable: the event is still recorded, and the Stream must not pause on our account. */ }

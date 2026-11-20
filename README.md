@@ -88,6 +88,7 @@ Setup: [`docs/quicknode-stream.md`](docs/quicknode-stream.md); rules: [`docs/PRO
 | `scripts/dispute-e2e.mts` on devnet | 10/10: who can dispute and when, once per entry, the on-chain log the Stream reads, settlement unaffected |
 | `scripts/app-e2e.mts` on the live URL | 6/6: three people with no SOL run a whole pact through the app's own client and the Worker |
 | `scripts/worker-security.mts` on the live URL | 32/32 attacks rejected |
+| `scripts/stream-pact-test.mts` (devnet pact, fake signed Stream deliveries) | 4/4: the Grok case carries the pact's goal, deadline and votes; unreadable pacts are skipped; repeats are deduplicated |
 | `cargo test` · Solana MCP `program_autofixer` | 12 unit tests · 0 issues |
 
 ## Run it
