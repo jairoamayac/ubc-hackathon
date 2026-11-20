@@ -19,12 +19,12 @@ No wallet, no seed phrase, no fees. Every action is a real devnet transaction, s
 | Solution | 30 s | "Burn the Boats: set a goal with your friends, put real money on the line, your friends verify. Hit it and you get your money back plus a share of the people who quit. Miss it and you lose it. It's not betting on others; it's a commitment to yourself." | App home |
 | Demo | 75 s | Sign in, Apple Pay, set "Run 21 km by Sunday", stake $20, friends join with their own goals, deadline, verification, payout. *Appeal with a screenshot reviewed by AI: show only once it's built; until then, say it's next.* | Live app on a phone |
 | Why Solana | 20 s | "The stakes live in a program, not in our bank account. Nobody can run off with the money: not your friends, not us. Rules are code; payouts are instant and almost free." | Explorer: program + a payout transaction |
-| Business + close | 20 s | "We take a cut of every forfeited stake: 40% platform, 60% to the friends who made it. Next: Strava, Screen Time and Apple Health, so proof is automatic. Burn the boats. Commit for real." | Closing slide |
+| Business + close | 20 s | "When someone walks away, 95% of their money goes to the friends who kept their word, and we keep 5%. Next: Strava, Screen Time and Apple Health, so proof is automatic. Burn the boats. Commit for real." | Closing slide |
 
 Likely questions:
 - *Why does the platform take money?* Our incentive is growth: we earn more when more people join and complete.
 - *Is this gambling?* No element of chance: you stake on your own behaviour, which you control.
-- *What if friends collude?* Only people who put money in vote, and you can appeal with proof reviewed by AI.
+- *What if friends collude?* Only people who put money in can confirm, nobody confirms themselves, and a strict majority decides. Appeals with proof reviewed by AI come next; we say so openly.
 - *Who holds the money?* The program. Not us, not your friends.
 
 ## Running a group alone (testing or recording)

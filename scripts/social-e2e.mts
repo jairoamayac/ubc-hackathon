@@ -134,14 +134,16 @@ let c = hm.decodeChallenge(ch, await info(ch));
 assert(c.participants === 3, "3 joined");
 ok(`challenge "${c.title}": Ana, Leo and Maya each lock $10`);
 
-await expectFail([hm.voteEntryIx(sponsor.publicKey, josh.publicKey, crew, ch, leo.publicKey, false)], [josh], "BetStillOpen");
+await expectFail([hm.voteEntryIx(sponsor.publicKey, maya.publicKey, crew, ch, leo.publicKey, false)], [maya], "BetStillOpen");
 await sleep((endsAt - Math.floor(Date.now() / 1000) + 2) * 1000);
 await expectFail([hm.joinChallengeIx(sponsor.publicKey, josh.publicKey, crew, ch)], [josh], "BetClosed");
 await expectFail([hm.voteEntryIx(sponsor.publicKey, leo.publicKey, crew, ch, leo.publicKey, true)], [leo], "SubjectCantVote");
 ok("no joining after the deadline, no voting before it, nobody votes on themselves");
 
+// Only participants verify now (Josh didn't put money in, so he can't vote)
+await expectFail([hm.voteEntryIx(sponsor.publicKey, josh.publicKey, crew, ch, leo.publicKey, false)], [josh], "AccountNotInitialized");
 const verdicts: [Keypair, Keypair[], boolean][] = [
-  [ana, [leo, maya], true], [leo, [ana, josh], false], [maya, [ana, josh], true],
+  [ana, [leo, maya], true], [leo, [ana, maya], false], [maya, [ana, leo], true],
 ];
 for (const [who, voters, passed] of verdicts) {
   for (const v of voters) await send([hm.voteEntryIx(sponsor.publicKey, v.publicKey, crew, ch, who.publicKey, passed)], [v]);
@@ -156,9 +158,10 @@ const anaBefore = await valueOf(crew, ana.publicKey);
 for (const kp of [ana, leo, maya]) await send([hm.claimChallengeIx(kp.publicKey, crew, ch)], [kp]);
 const anaWon = (await valueOf(crew, ana.publicKey)) - anaBefore;
 const leoGot = (await valueOf(crew, leo.publicKey)) - leoBefore;
-assert(anaWon > 14.9 && anaWon < 15.2, `Ana got back ~$15 (got ${anaWon})`);
+assert(anaWon > 14.6 && anaWon < 14.9, `Ana got back ~$14.75 (got ${anaWon})`);
 assert(leoGot < 0.01, "Leo forfeits his stake");
-ok(`settled: Ana and Maya get $10 back + $5 each from Leo; Leo pays $10`);
+await send([hm.takeFeeIx(sponsor.publicKey, mint, crew, ch)], []);
+ok(`settled: Ana and Maya get $10 back + $4.75 each from Leo (5% to the platform); Leo pays $10`);
 
 // 4. Everyone can still leave with what they have
 for (const kp of [ana, leo, maya, josh]) {

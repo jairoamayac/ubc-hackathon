@@ -38,7 +38,7 @@ export interface BetView {
   myVote?: number;
   canVote: boolean;
 }
-export interface EntryView { entry: hm.EntryAccount; name: string; isMe: boolean; myVote?: number }
+export interface EntryView { entry: hm.EntryAccount; name: string; isMe: boolean; myVote?: number; goal?: string; stakeUsd: number }
 export interface ChallengeView {
   challenge: hm.ChallengeAccount;
   creatorName: string;
@@ -46,6 +46,9 @@ export interface ChallengeView {
   potUsd: number;
   entries: EntryView[];
   mine?: EntryView & { payoutUsd: number; usd: number };
+  feeTaken: boolean;
+  feeUsd: number;
+  forfeitUsd: number;
 }
 export interface CrewDetail { crew: PublicKey; people: PersonView[]; bets: BetView[]; challenges: ChallengeView[]; isMember: boolean }
 
@@ -85,6 +88,8 @@ function friendly(msg: string) {
   if (msg.includes("AlreadyClaimed")) return "Already collected.";
   if (msg.includes("NotEnoughShares")) return "Not enough money in this crew. Add more first.";
   if (msg.includes("already in use")) return "You already did that one.";
+  if (msg.includes("NotAParticipant") || msg.includes("voter_entry")) return "Only people who put money in can verify.";
+  if (msg.includes("StakeTooLow")) return "Put in at least the group's minimum.";
   if (msg.includes("PrincipalIsProtected")) return "Only what your crew earned can be played. Your savings are protected.";
   if (msg.includes("CallNotExpired")) return "Your call is still running.";
   if (msg.includes("CallOpen")) return "Finish your open call first.";
@@ -174,9 +179,12 @@ export class LiveClient {
     return this.submit(tx, lastValidBlockHeight);
   }
 
-  createCrew(name: string, emoji: string) {
-    const id = BigInt(Date.now());
+  createCrew(name: string, emoji: string, id: bigint = BigInt(Date.now())) {
     return this.send([hm.createCrewIx(this.sponsor, this.owner.publicKey, this.mint, id, name, emoji)]);
+  }
+  /** Address of a group this person creates with the given id. */
+  crewAddress(id: bigint) {
+    return hm.crewPda(this.owner.publicKey, id);
   }
   join(crew: PublicKey) {
     return this.send([hm.joinCrewIx(this.sponsor, this.owner.publicKey, crew)]);
@@ -238,6 +246,8 @@ export class LiveClient {
       ...bs.map((b) => hm.positionPda(b.address, me)),
       ...bs.map((b) => hm.votePda(b.address, me)),
       ...entries.map((e) => hm.votePda(e.address, me)),
+      ...entries.map((e) => hm.goalPda(e.address)),
+      ...cs.map((ch) => hm.feePda(ch.address)),
     ];
     const infos: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
     for (let i = 0; i < lookups.length; i += 100) infos.push(...(await this.conn.getMultipleAccountsInfo(lookups.slice(i, i + 100))));
@@ -272,15 +282,25 @@ export class LiveClient {
     });
     k += bs.length * 2;
     const entryVotes = new Map(entries.map((e, i) => [e.address.toBase58(), voteChoice(infos[k + i])]));
+    k += entries.length;
+    const goals = new Map(entries.map((e, i) => {
+      const inf = infos[k + i];
+      return [e.address.toBase58(), inf ? hm.decodeGoal(inf.data).goal : undefined];
+    }));
+    k += entries.length;
+    const fees = new Map(cs.map((ch, i) => [ch.address.toBase58(), !!infos[k + i]]));
 
     const chViews: ChallengeView[] = cs.map((ch) => {
       const es: EntryView[] = entries
         .filter((e) => e.challenge.equals(ch.address))
-        .map((e) => ({ entry: e, name: nameOf(e.owner), isMe: e.owner.equals(me), myVote: entryVotes.get(e.address.toBase58()) }));
+        .map((e) => ({
+          entry: e, name: nameOf(e.owner), isMe: e.owner.equals(me), myVote: entryVotes.get(e.address.toBase58()),
+          goal: goals.get(e.address.toBase58()), stakeUsd: usd(e.shares),
+        }));
       const mine = es.find((e) => e.isMe);
       let payout = 0n;
       if (mine && ch.participants > 0 && ch.decided === ch.participants) {
-        payout = ch.passedShares === 0n ? mine.entry.shares : mine.entry.status === hm.ENTRY.PASSED ? hm.winnerPayout(mine.entry.shares, ch.passedShares, ch.failedShares) : 0n;
+        payout = ch.passedShares === 0n ? mine.entry.shares : mine.entry.status === hm.ENTRY.PASSED ? hm.commitmentPayout(mine.entry.shares, ch.passedShares, ch.failedShares) : 0n;
       }
       return {
         challenge: ch,
@@ -289,6 +309,9 @@ export class LiveClient {
         potUsd: usd(es.reduce((s, e) => s + e.entry.shares, 0n)),
         entries: es,
         mine: mine ? { ...mine, payoutUsd: usd(payout), usd: usd(mine.entry.shares) } : undefined,
+        feeTaken: fees.get(ch.address.toBase58()) ?? false,
+        feeUsd: usd(hm.platformFee(ch.passedShares, ch.failedShares)),
+        forfeitUsd: usd(ch.failedShares),
       };
     });
 
@@ -332,11 +355,28 @@ export class LiveClient {
   joinChallenge(crew: PublicKey, challenge: PublicKey) {
     return this.send([hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, challenge)]);
   }
+  /** Burn the Boats: put money on your own goal. */
+  joinWithGoal(crew: PublicKey, challenge: PublicKey, goal: string, stakeUsd: number) {
+    return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]);
+  }
+  /** Start a commitment round and put money on your goal in the same tap. */
+  startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number) {
+    const id = BigInt(Date.now());
+    const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
+    const ch = hm.challengePda(crew, id);
+    return this.send([
+      hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(minStakeUsd), endsAt),
+      hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd)),
+    ]);
+  }
   voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
     return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
   }
-  claimChallenge(crew: PublicKey, challenge: PublicKey) {
-    return this.send([hm.claimChallengeIx(this.owner.publicKey, crew, challenge)]);
+  /** Collect your result. The first person to collect also moves the platform's 5% (sponsored, once). */
+  claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
+    const ixs = feeTaken ? [] : [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge)];
+    ixs.push(hm.claimChallengeIx(this.owner.publicKey, crew, challenge));
+    return this.send(ixs);
   }
 
   private async send(ixs: TransactionInstruction[]) {

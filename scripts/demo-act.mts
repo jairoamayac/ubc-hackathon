@@ -14,6 +14,7 @@ const sponsor = loadOrCreate("sponsor");
 const crew = new PublicKey(process.argv[2]);
 const saved = JSON.parse(fs.readFileSync(new URL(`../keys/demo-${cluster}.json`, import.meta.url), "utf8"))[crew.toBase58()];
 const friends = Object.entries(saved.friends as Record<string, number[]>).map(([n, sk]) => [n, Keypair.fromSecretKey(Uint8Array.from(sk))] as const);
+const MINT = new PublicKey(JSON.parse(fs.readFileSync(new URL(`../keys/${cluster}.json`, import.meta.url), "utf8")).mint);
 const VOTE = (process.env.VOTE ?? "yes") === "yes" ? 1 : 2;
 const FAIL = (process.env.FAIL ?? "Josh").split(",");
 
@@ -39,6 +40,17 @@ for (const b of bets.filter((x) => x.outcome === hm.OUTCOME.OPEN && now >= x.clo
   }
 }
 const chs = (await conn.getProgramAccounts(hm.PROGRAM_ID, { filters: filter(hm.SOCIAL_ACCOUNT_DISC.Challenge) })).map((a) => hm.decodeChallenge(a.pubkey, a.account.data));
+// JOIN=1: friends lock money on their own goals in any open pact they're not in yet
+if (process.env.JOIN) {
+  const ideas = ["Gym 3 times this week", "No takeout for 7 days", "Read 50 pages", "In bed before midnight"];
+  for (const ch of chs.filter((c) => now < c.endsAt)) {
+    for (const [i, [n, kp]] of friends.entries()) {
+      if (await conn.getAccountInfo(hm.entryPda(ch.address, kp.publicKey))) continue;
+      const stake = ch.stake > hm.fromUsd(10) ? ch.stake : hm.fromUsd(10);
+      await tryDo(`${n} locks $${hm.toUsd(stake)} on "${ideas[i % ideas.length]}"`, [hm.joinWithGoalIx(sponsor.publicKey, kp.publicKey, crew, ch.address, ideas[i % ideas.length], stake)], [kp]);
+    }
+  }
+}
 for (const ch of chs.filter((c) => now >= c.endsAt)) {
   const entries = (await conn.getProgramAccounts(hm.PROGRAM_ID, {
     filters: [hm.discFilter(hm.SOCIAL_ACCOUNT_DISC.Entry, bs58.encode), { memcmp: { offset: 8, bytes: ch.address.toBase58() } }],
@@ -48,6 +60,7 @@ for (const ch of chs.filter((c) => now >= c.endsAt)) {
     const passed = !FAIL.includes(who);
     for (const [n, kp] of friends) {
       if (kp.publicKey.equals(e.owner)) continue;
+      if (!(await conn.getAccountInfo(hm.entryPda(ch.address, kp.publicKey)))) continue; // only people with money in confirm
       if (await conn.getAccountInfo(hm.votePda(e.address, kp.publicKey))) continue;
       await tryDo(`${n} says ${who} ${passed ? "did it" : "didn't"} ("${ch.title}")`, [hm.voteEntryIx(sponsor.publicKey, kp.publicKey, crew, ch.address, e.owner, passed)], [kp]);
     }
@@ -61,6 +74,10 @@ for (const b of bets) {
   }
 }
 for (const ch of chs) {
+  const fresh = hm.decodeChallenge(ch.address, (await conn.getAccountInfo(ch.address))!.data);
+  if (fresh.participants > 0 && fresh.decided === fresh.participants && !(await conn.getAccountInfo(hm.feePda(ch.address)))) {
+    await tryDo(`platform takes its 5% of "${ch.title}"`, [hm.takeFeeIx(sponsor.publicKey, saved.mint ? new PublicKey(saved.mint) : MINT, crew, ch.address)], []);
+  }
   for (const [n, kp] of friends) {
     const en = await conn.getAccountInfo(hm.entryPda(ch.address, kp.publicKey));
     if (en && !hm.decodeEntry(hm.entryPda(ch.address, kp.publicKey), en.data).claimed) await tryDo(`${n} collects "${ch.title}"`, [hm.claimChallengeIx(kp.publicKey, crew, ch.address)], [kp]);

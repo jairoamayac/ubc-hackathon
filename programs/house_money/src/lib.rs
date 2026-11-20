@@ -356,6 +356,16 @@ pub mod house_money {
     pub fn claim_challenge(ctx: Context<ClaimChallenge>) -> Result<()> {
         social::claim_challenge_handler(ctx)
     }
+
+    /// Burn the Boats: join a commitment with your own goal and stake.
+    pub fn join_with_goal(ctx: Context<JoinWithGoal>, goal: String, stake: u64) -> Result<()> {
+        social::join_with_goal_handler(ctx, goal, stake)
+    }
+
+    /// Moves the platform's 5% of the forfeits to the treasury, once per commitment. Anyone can call it.
+    pub fn take_fee(ctx: Context<TakeFee>) -> Result<()> {
+        social::take_fee_handler(ctx)
+    }
 }
 
 // ---------------------------------------------------------------- helpers
@@ -802,6 +812,10 @@ pub enum HmError {
     NotDecided,
     #[msg("Already claimed.")]
     AlreadyClaimed,
+    #[msg("Only people who put money in can verify.")]
+    NotAParticipant,
+    #[msg("Stake below this commitment's minimum.")]
+    StakeTooLow,
 }
 
 #[cfg(test)]

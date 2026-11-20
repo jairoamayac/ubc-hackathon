@@ -1,22 +1,20 @@
 "use client";
 
-import { ArrowLeft, Crown, Flame, Home, Loader2, Lock, Plus, ShieldCheck, Trophy, User, X } from "lucide-react";
-import { PublicKey } from "@solana/web3.js";
+// Screens: onboarding → home (your money, your groups) → group (CrewRoom: pacts, goals, confirmations) → me.
+// Sheets: Apple Pay (simulated), add to a group, take out. Brand: branding kit v0.1 ("Forest").
+import { ArrowLeft, ChevronRight, Home, Loader2, Plus, User, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { PublicKey } from "@solana/web3.js";
 import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
+import { PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
-import { Logo } from "./Logo";
 import { Onboarding } from "./Onboarding";
 import { usd } from "./ui";
 
-type View = { id: "home" } | { id: "rank" } | { id: "me" } | { id: "new" } | { id: "crew"; key: string };
-type Sheet =
-  | null
-  | { id: "applepay" }
-  | { id: "deposit"; crew: CrewView }
-  | { id: "withdraw"; crew: CrewView };
+type View = { id: "home" } | { id: "me" } | { id: "new" } | { id: "group"; key: string };
+type Sheet = null | { id: "applepay"; then?: CrewView } | { id: "deposit"; crew: CrewView } | { id: "withdraw"; crew: CrewView };
+export type Act = (label: string, fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
 
-const EMOJIS = ["🤠", "🔥", "🏠", "🎓", "🏀", "✈️", "🌮", "💎"];
 const YEAR = 31_536_000;
 
 export default function CrewsApp() {
@@ -27,30 +25,29 @@ export default function CrewsApp() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
-
-  // Toasts clear themselves (errors stay a little longer).
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), toast.tone === "ok" ? 3500 : 7000);
-    return () => clearTimeout(t);
-  }, [toast]);
   const [now, setNow] = useState(0);
 
   useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), toast.tone === "ok" ? 4000 : 8000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
     LiveClient.connect().then(setClient).catch((e: Error) => setToast({ text: e.message, tone: "err" }));
-    // Invite links: /?crew=<address> opens that crew so a friend can join in one tap.
+    // Invite links: /?crew=<address> opens that group so a friend can join in one tap.
     const invited = new URLSearchParams(location.search).get("crew");
     if (invited) {
       try {
         const key = new PublicKey(invited).toBase58();
-        setTimeout(() => setView({ id: "crew", key }), 0);
+        setTimeout(() => setView({ id: "group", key }), 0);
       } catch {
-        /* not a crew link */
+        /* not a group link */
       }
     }
   }, []);
 
-  // Your name lives on-chain (sponsored) so the crew sees "Leo", never an address.
+  // Names are stored onchain (sponsored) so friends see "Leo", never an address.
   useEffect(() => {
     if (!client || !name || localStorage.getItem("hm.profile") === name) return;
     client.setProfile(name).then(() => localStorage.setItem("hm.profile", name)).catch(() => {});
@@ -75,7 +72,6 @@ export default function CrewsApp() {
     };
   }, [client, refresh]);
 
-  // A one-second clock drives the live earnings counters (the FOMO).
   useEffect(() => {
     const tick = () => setNow(Date.now() / 1000);
     tick();
@@ -87,7 +83,7 @@ export default function CrewsApp() {
     window.scrollTo({ top: 0 });
   }, [view]);
 
-  const act = async (label: string, fn: () => Promise<unknown>, done?: string) => {
+  const act: Act = async (label, fn, done) => {
     setBusy(label);
     setToast(null);
     try {
@@ -107,136 +103,137 @@ export default function CrewsApp() {
   if (!name) {
     return (
       <Shell>
-        <Onboarding
-          onDone={(n) => {
-            setName(n);
-          }}
-        />
+        <Onboarding onDone={(n) => setName(n)} />
       </Shell>
     );
   }
 
-  const myCrews = snap?.crews.filter((c) => c.me) ?? [];
-  const savings = myCrews.reduce((s, c) => s + liveValue(c, snap!, now), 0);
-  const crew = view.id === "crew" ? snap?.crews.find((c) => c.address.toBase58() === view.key) : undefined;
-  const tab = view.id === "rank" ? "rank" : view.id === "me" ? "me" : "home";
+  const myGroups = snap?.crews.filter((c) => c.me) ?? [];
+  const inGroups = myGroups.reduce((s, c) => s + liveValue(c, snap!, now), 0);
+  const group = view.id === "group" ? snap?.crews.find((c) => c.address.toBase58() === view.key) : undefined;
+  const tab = view.id === "me" ? "me" : "home";
 
   return (
     <Shell>
+      <div aria-live="polite" role="status" className="sr-only">{toast?.tone === "ok" ? toast.text : ""}</div>
       {toast && (
-        <button
-          role="alert"
-          onClick={() => setToast(null)}
-          className={`fixed left-1/2 top-4 z-50 w-[min(400px,90vw)] -translate-x-1/2 rounded-2xl px-4 py-3 text-left text-sm font-bold shadow-lg ${
-            toast.tone === "ok" ? "bg-ink text-paper" : "bg-ember-soft text-ember-text"
+        <div
+          role={toast.tone === "err" ? "alert" : undefined}
+          className={`fixed left-1/2 top-4 z-50 flex w-[min(400px,92vw)] -translate-x-1/2 items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+            toast.tone === "ok" ? "border-forest bg-forest text-white" : "border-danger bg-paper text-danger"
           }`}
         >
-          {toast.text}
-        </button>
+          <span className="flex-1">{toast.text}</span>
+          <button onClick={() => setToast(null)} aria-label="Dismiss message" className="-m-2 flex h-11 w-11 items-center justify-center"><X className="h-4 w-4" aria-hidden /></button>
+        </div>
       )}
 
       {!snap ? (
-        <div className="flex flex-1 items-center justify-center gap-2 font-bold text-muted">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading your crews…
+        <div className="flex flex-1 items-center justify-center gap-2 text-muted" role="status">
+          <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Loading
         </div>
       ) : view.id === "home" ? (
         <Page>
           <Top name={name} />
-          <section className="sun relative overflow-hidden rounded-[28px] bg-ink p-6 text-paper">
-            <p className="text-sm font-bold text-paper/70">Saved with your crews</p>
-            <p className="mt-1 text-[44px] font-extrabold leading-none tracking-tight tabular-nums">{usd(savings)}</p>
-            <p className="mt-3 flex items-center gap-2 text-sm font-bold text-paper/80">
-              <ShieldCheck className="h-4 w-4" /> Cash ready to send: {usd(snap.cash)}
-            </p>
-            <button onClick={() => setSheet({ id: "applepay" })} aria-label="Add money with Apple Pay" className="btn mt-5 w-full bg-black py-4 text-lg text-white">
-              Add money with <span className="font-extrabold"> Pay</span>
-            </button>
+          <section aria-labelledby="money-title" className="card p-6">
+            <h2 id="money-title" className="text-sm text-muted">Your money</h2>
+            <p className="mt-1 text-[40px] font-medium leading-none tracking-tight tabular-nums">{usd(snap.cash + inGroups)}</p>
+            <p className="mt-3 text-sm text-muted">{usd(inGroups)} in your groups · {usd(snap.cash)} ready to use</p>
+            <ApplePayButton className="mt-5 w-full" onClick={() => setSheet({ id: "applepay" })} label="Add money with Apple Pay" />
           </section>
 
-          <SectionTitle title="Your crews" action={<button onClick={() => setView({ id: "new" })} className="flex items-center gap-1 text-sm font-extrabold text-ember-text"><Plus className="h-4 w-4" /> New crew</button>} />
-          {myCrews.length === 0 ? (
-            <div className="card p-5 text-center">
-              <p className="font-extrabold">You&apos;re not in a crew yet.</p>
-              <p className="mt-1 text-sm font-semibold text-muted">Start one with friends or join a trending crew below.</p>
-              <button onClick={() => setView({ id: "new" })} className="btn btn-primary mt-4 w-full py-3">Start a crew</button>
+          <div className="mt-2 flex items-center justify-between">
+            <h2 className="text-lg font-medium">Your groups</h2>
+            <button onClick={() => setView({ id: "new" })} className="flex min-h-11 items-center gap-1 px-1 text-sm font-medium text-forest"><Plus className="h-4 w-4" aria-hidden /> New group</button>
+          </div>
+          {myGroups.length === 0 ? (
+            <div className="card p-5">
+              <p className="font-medium">Start with your people.</p>
+              <p className="mt-1 text-sm text-muted">A group is you and a few friends, each with money on a goal. Create one and share the invite link.</p>
+              <button onClick={() => setView({ id: "new" })} className="btn btn-primary mt-4 w-full">Start a group</button>
             </div>
           ) : (
-            myCrews.map((c) => <CrewRow key={c.address.toBase58()} crew={c} snap={snap} now={now} rank={rankOf(snap, c)} onOpen={() => setView({ id: "crew", key: c.address.toBase58() })} mine />)
+            <ul className="space-y-3">
+              {myGroups.map((c) => (
+                <li key={c.address.toBase58()}>
+                  <button onClick={() => setView({ id: "group", key: c.address.toBase58() })} className="card flex min-h-16 w-full items-center gap-3 p-4 text-left">
+                    <span className="dot" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{c.name}</span>
+                      <span className="block text-sm text-muted">{c.members} {c.members === 1 ? "person" : "people"}</span>
+                    </span>
+                    <span className="text-right tabular-nums">{usd(liveValue(c, snap, now))}</span>
+                    <ChevronRight className="h-5 w-5 text-muted" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
 
-          <SectionTitle title="Trending now" action={<button onClick={() => setView({ id: "rank" })} className="text-sm font-extrabold text-muted">See all</button>} />
-          {snap.crews.filter((c) => !c.me).slice(0, 3).map((c) => (
-            <CrewRow key={c.address.toBase58()} crew={c} snap={snap} now={now} rank={rankOf(snap, c)} onOpen={() => setView({ id: "crew", key: c.address.toBase58() })} />
-          ))}
-          {snap.crews.filter((c) => !c.me).length === 0 && <p className="text-sm font-semibold text-muted">No other crews yet. Be the first one everyone wants to join.</p>}
-        </Page>
-      ) : view.id === "rank" ? (
-        <Page>
-          <h1 className="text-[34px] font-extrabold tracking-tight">Leaderboard</h1>
-          <p className="-mt-2 font-semibold text-muted">Crews ranked by how much their savings grew.</p>
-          {snap.crews.map((c, i) => (
-            <button key={c.address.toBase58()} onClick={() => setView({ id: "crew", key: c.address.toBase58() })} className={`card flex items-center gap-3 p-4 text-left ${c.me ? "ring-2 ring-ember" : ""}`}>
-              <span className={`w-6 text-center text-lg font-extrabold ${i === 0 ? "text-ember-text" : "text-muted"}`}>{i === 0 ? <Crown className="mx-auto h-5 w-5" /> : i + 1}</span>
-              <span className="text-2xl">{c.emoji}</span>
-              <span className="flex-1">
-                <span className="block font-extrabold">{c.name}</span>
-                <span className="text-xs font-bold text-muted">{plural(c.members)} · {usd(c.vault)} saved</span>
-              </span>
-              <span className="text-right font-extrabold text-gain">+{liveGrowth(c, snap, now).toFixed(3)}%</span>
-            </button>
-          ))}
+          <section aria-labelledby="how-title" className="card mt-2 space-y-3 p-5">
+            <h2 id="how-title" className="font-medium">How it works</h2>
+            <ol className="space-y-2 text-sm text-muted">
+              <li>1. Lock money on your own goal, for example run 21 km by Sunday, $20.</li>
+              <li>2. Friends join with their own goals and money.</li>
+              <li>3. When time is up, the people who put money in confirm who kept their word.</li>
+              <li>4. Kept it: your money comes back with a share of what others left. Walked away: you lose it, 95% to the friends who kept theirs, 5% to us.</li>
+            </ol>
+          </section>
         </Page>
       ) : view.id === "me" ? (
         <Page>
-          <h1 className="text-[34px] font-extrabold tracking-tight">{name}</h1>
-          <div className="card space-y-3 p-5 font-bold">
-            <Row k="Saved in crews" v={usd(savings)} />
-            <Row k="Cash" v={usd(snap.cash)} />
-            <Row k="Crews" v={String(myCrews.length)} />
-
+          <h1 className="text-[32px] font-medium tracking-tight">{name}</h1>
+          <div className="card space-y-3 p-5">
+            <Row k="In your groups" v={usd(inGroups)} />
+            <Row k="Ready to use" v={usd(snap.cash)} />
+            <Row k="Groups" v={String(myGroups.length)} />
           </div>
-          <div className="card space-y-2 p-5 text-sm font-semibold text-muted">
-            <p className="flex items-center gap-2 font-extrabold text-ink"><Lock className="h-4 w-4" /> How your money is protected</p>
-            <p>Your savings sit in your crew&apos;s pot and only you can take your part out. Money only moves between friends when you put it on a bet or a challenge, and only after the crew votes. Those rules are enforced by the app&apos;s code, not by a promise.</p>
-            <p className="pt-1 text-xs">Demo on test dollars. Earnings run at {snap.config.apyBps / 100}% a year, sped up {snap.config.timeWarp.toLocaleString()}x so you can watch them grow.</p>
-          </div>
-          <button onClick={() => setName("")} className="btn btn-quiet py-3">Change name</button>
+          <section aria-labelledby="safe-title" className="card space-y-2 p-5 text-sm text-muted">
+            <h2 id="safe-title" className="font-medium text-ink">Who holds your money</h2>
+            <p>Not us, and not your friends. Money sits in your group&apos;s pot, held by code nobody can change. Only you can take out your part, and locked money moves only after the people who put money in confirm a result.</p>
+            <p>When someone walks away, 95% of their money goes to the friends who kept their word and 5% to {PROJECT_NAME}. Nothing goes anywhere else.</p>
+            <p className="pt-1 text-xs">Demo with test dollars. Apple Pay is simulated; no card is charged.</p>
+          </section>
+          <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>
         </Page>
       ) : view.id === "new" ? (
-        <NewCrew
-          busy={!!busy}
+        <NewGroup
+          busy={busy === "create"}
           onBack={() => setView({ id: "home" })}
-          onCreate={async (n, e) => {
-            const okay = await act("create", () => client!.createCrew(n, e), `${e} ${n} is live. Invite your friends.`);
-            if (okay) setView({ id: "home" });
+          onCreate={async (n) => {
+            const id = BigInt(Date.now());
+            const okay = await act("create", () => client!.createCrew(n, "", id), `${n} is ready. Share the invite link with your friends.`);
+            if (okay) setView({ id: "group", key: client!.crewAddress(id).toBase58() });
           }}
         />
-      ) : crew && client ? (
+      ) : group && client ? (
         <CrewRoom
           client={client}
-          crew={crew}
+          crew={group}
           snap={snap}
           now={now}
-          rank={rankOf(snap, crew)}
           busy={busy}
-          value={liveValue(crew, snap, now)}
+          value={liveValue(group, snap, now)}
           act={act}
           onBack={() => {
             history.replaceState(null, "", location.pathname);
             setView({ id: "home" });
           }}
-          onDeposit={() => setSheet({ id: "deposit", crew })}
-          onWithdraw={() => setSheet({ id: "withdraw", crew })}
+          onDeposit={() => setSheet(snap.cash < 0.01 ? { id: "applepay", then: group } : { id: "deposit", crew: group })}
+          onWithdraw={() => setSheet({ id: "withdraw", crew: group })}
         />
       ) : (
-        <Page><p className="font-bold text-muted">Crew not found.</p></Page>
+        <Page>
+          <BackButton onClick={() => setView({ id: "home" })} />
+          <p className="flex items-center gap-2 text-muted" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Opening the group</p>
+        </Page>
       )}
 
-      {snap && ["home", "rank", "me"].includes(view.id) && (
-        <nav className="glass sticky bottom-3 mx-4 mt-6 flex justify-around rounded-2xl p-1.5">
-          {([["home", "Home", <Home key="h" className="h-5 w-5" />], ["rank", "Leaderboard", <Trophy key="t" className="h-5 w-5" />], ["me", "Me", <User key="u" className="h-5 w-5" />]] as const).map(([id, label, icon]) => (
+      {snap && (view.id === "home" || view.id === "me") && (
+        <nav aria-label="Main" className="glass sticky bottom-3 mx-4 mt-6 flex justify-around rounded-xl p-1.5">
+          {([["home", "Home", <Home key="h" className="h-5 w-5" aria-hidden />], ["me", "Me", <User key="u" className="h-5 w-5" aria-hidden />]] as const).map(([id, label, icon]) => (
             <button key={id} onClick={() => setView({ id })} aria-current={tab === id ? "page" : undefined}
-              className={`flex flex-1 flex-col items-center gap-0.5 rounded-xl py-2 text-[11px] font-bold transition ${tab === id ? "bg-ink text-paper" : "text-muted"}`}>
+              className={`flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-xs transition ${tab === id ? "bg-forest text-white" : "text-muted"}`}>
               {icon}{label}
             </button>
           ))}
@@ -244,33 +241,32 @@ export default function CrewsApp() {
       )}
 
       {sheet && snap && (
-        <SheetFrame onClose={() => setSheet(null)}>
+        <Dialog
+          title={sheet.id === "applepay" ? "Add money" : sheet.id === "deposit" ? `Add to ${sheet.crew.name}` : "Take money out"}
+          onClose={() => setSheet(null)}
+        >
           {sheet.id === "applepay" && (
-            <ApplePay busy={busy === "topup"} onPay={async (amt) => {
-              if (await act("topup", () => client!.topUp(amt), `${usd(amt)} added to your cash.`)) setSheet(null);
+            <ApplePaySheet busy={busy === "topup"} onPay={async (amt) => {
+              const ok = await act("topup", () => client!.topUp(amt), `${usd(amt)} added.`);
+              if (ok) setSheet(sheet.then ? { id: "deposit", crew: sheet.then } : null);
             }} />
           )}
-          {sheet.id === "deposit" && snap.cash < 0.01 && (
-            <ApplePay busy={busy === "topup"} onPay={async (amt) => {
-              await act("topup", () => client!.topUp(amt), `${usd(amt)} added. Now send it to ${sheet.crew.name}.`);
-            }} />
-          )}
-          {sheet.id === "deposit" && snap.cash >= 0.01 && (
-            <AmountSheet title={`Send to ${sheet.crew.emoji} ${sheet.crew.name}`} max={snap.cash} cta="Send" busy={busy === "deposit"}
-              hint={snap.cash === 0 ? "Add money with Apple Pay first." : `You have ${usd(snap.cash)} in cash.`}
+          {sheet.id === "deposit" && (
+            <AmountForm max={snap.cash} cta={sheet.crew.me ? "Add money" : "Join group"} busy={busy === "deposit"}
+              hint={`You have ${usd(snap.cash)} ready to use. Money in a group stays yours until you lock it on a goal.`}
               onSubmit={async (amt) => {
-                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} sent to ${sheet.crew.name}.`)) setSheet(null);
+                if (await act("deposit", () => client!.deposit(sheet.crew.address, amt, !!sheet.crew.me), `${usd(amt)} added to ${sheet.crew.name}.`)) setSheet(null);
               }} />
           )}
           {sheet.id === "withdraw" && sheet.crew.me && (
-            <AmountSheet title="Take money out" max={sheet.crew.me.value} cta="Take out" busy={busy === "withdraw"}
-              hint={`Your part of the pot: ${usd(sheet.crew.me.value)}. It goes back to your cash.`}
+            <AmountForm max={sheet.crew.me.value} cta="Take out" busy={busy === "withdraw"}
+              hint={`Free to take out: ${usd(sheet.crew.me.value)}. Money locked on a goal stays until your friends confirm.`}
               onSubmit={async (amt) => {
                 const all = amt >= sheet.crew.me!.value - 0.000001;
-                if (await act("withdraw", () => client!.withdraw(sheet.crew, all ? "all" : amt), `${usd(amt)} back in your cash.`)) setSheet(null);
+                if (await act("withdraw", () => client!.withdraw(sheet.crew, all ? "all" : amt), `${usd(amt)} back in your money.`)) setSheet(null);
               }} />
           )}
-        </SheetFrame>
+        </Dialog>
       )}
     </Shell>
   );
@@ -291,28 +287,22 @@ function setName(n: string) {
   nameListeners.forEach((cb) => cb());
 }
 
-/** Pot value including earnings that accrue every second (paid on-chain at the next action). */
 function pending(c: CrewView, snap: Snapshot, now: number) {
   const principal = Number(c.totalPrincipal) / 1e6;
   const elapsed = Math.max(0, now - c.lastAccrual);
   return (principal * (snap.config.apyBps / 10_000) * snap.config.timeWarp * elapsed) / YEAR;
 }
-function liveGrowth(c: CrewView, snap: Snapshot, now: number) {
-  const principal = Number(c.totalPrincipal) / 1e6;
-  return principal > 0 ? ((Number(c.yieldPaid) / 1e6 + pending(c, snap, now)) / principal) * 100 : 0;
-}
-const plural = (n: number) => `${n} ${n === 1 ? "member" : "members"}`;
-function liveValue(c: CrewView, snap: Snapshot, now: number) {
+/** Your free money in a group, including what accrues every second. */
+export function liveValue(c: CrewView, snap: Snapshot, now: number) {
   if (!c.me) return 0;
   const share = c.vault > 0 ? c.me.value / c.vault : 0;
   return c.me.value + pending(c, snap, now) * share;
 }
-const rankOf = (snap: Snapshot, c: CrewView) => snap.crews.findIndex((x) => x.address.equals(c.address)) + 1;
 
 function Shell({ children }: { children?: ReactNode }) {
   return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-[440px] flex-col overflow-hidden bg-paper sm:my-6 sm:min-h-[860px] sm:rounded-[40px] sm:shadow-[0_0_0_1px_rgba(31,29,36,0.06),0_30px_80px_-30px_rgba(31,29,36,0.35)]">
-      {children}
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-[440px] flex-col overflow-hidden bg-paper sm:my-6 sm:min-h-[860px] sm:rounded-2xl sm:border sm:border-stone">
+      <main className="flex flex-1 flex-col">{children}</main>
     </div>
   );
 }
@@ -321,103 +311,86 @@ function Page({ children }: { children: ReactNode }) {
 }
 function Top({ name }: { name: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="flex items-center gap-2 text-lg font-extrabold tracking-tight"><Logo size={28} /> house money</span>
-      <span className="text-sm font-extrabold text-muted">Hi, {name}</span>
-    </div>
+    <header className="flex items-center justify-between">
+      <span className="flex items-center gap-2 text-lg font-medium"><span className="dot" aria-hidden /> {PROJECT_NAME}</span>
+      <span className="text-sm text-muted">Hi, {name}</span>
+    </header>
   );
 }
-function SectionTitle({ title, action }: { title: string; action?: ReactNode }) {
-  return (
-    <div className="mt-2 flex items-center justify-between">
-      <h2 className="text-xl font-extrabold tracking-tight">{title}</h2>
-      {action}
-    </div>
-  );
+export function BackButton({ onClick }: { onClick: () => void }) {
+  return <button onClick={onClick} className="flex min-h-11 items-center gap-1 self-start text-muted"><ArrowLeft className="h-5 w-5" aria-hidden /> Back</button>;
 }
 function Row({ k, v }: { k: string; v: string }) {
-  return <p className="flex justify-between"><span className="text-muted">{k}</span>{v}</p>;
+  return <p className="flex justify-between"><span className="text-muted">{k}</span><span className="tabular-nums">{v}</span></p>;
 }
 
-function CrewRow({ crew, snap, now, rank, onOpen, mine }: { crew: CrewView; snap: Snapshot; now: number; rank: number; onOpen: () => void; mine?: boolean }) {
-  const perMinute = crew.yieldPerDay / 1440;
+export function ApplePayButton({ onClick, label, className = "", disabled }: { onClick: () => void; label: string; className?: string; disabled?: boolean }) {
   return (
-    <button onClick={onOpen} className="card flex items-center gap-3 p-4 text-left">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-stone text-2xl">{crew.emoji}</span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5 font-extrabold">
-          <span className="truncate">{crew.name}</span>
-          {rank === 1 && <Flame className="h-4 w-4 shrink-0 fill-ember text-ember" />}
-        </span>
-        <span className="block text-xs font-bold text-muted">
-          #{rank} · {plural(crew.members)} · +${perMinute.toFixed(3)}/min
-        </span>
-      </span>
-      <span className="text-right">
-        <span className="block font-extrabold tabular-nums">{mine ? usd(liveValue(crew, snap, now)) : usd(crew.vault + pending(crew, snap, now))}</span>
-        <span className="text-xs font-extrabold text-gain">+{liveGrowth(crew, snap, now).toFixed(3)}%</span>
-      </span>
+    <button onClick={onClick} disabled={disabled} aria-label={label} className={`btn bg-black py-4 text-lg text-white ${className}`}>
+      <span aria-hidden>{label.startsWith("Pay") ? "Pay with" : "Add money with"}</span>
+      <span aria-hidden className="font-medium"> Pay</span>
     </button>
   );
 }
 
-function NewCrew({ onCreate, onBack, busy }: { onCreate: (name: string, emoji: string) => void; onBack: () => void; busy: boolean }) {
-  const [n, setN] = useState("");
-  const [e, setE] = useState(EMOJIS[0]);
-  return (
-    <Page>
-      <button onClick={onBack} className="flex items-center gap-1 self-start font-bold text-muted"><ArrowLeft className="h-5 w-5" /> Back</button>
-      <h1 className="text-[34px] font-extrabold leading-tight tracking-tight">Start a crew</h1>
-      <p className="-mt-2 font-semibold text-muted">Roommates, your team, the group chat. Everyone saves in one pot and grows together.</p>
-      <input value={n} onChange={(ev) => setN(ev.target.value)} maxLength={32} placeholder="Crew name" aria-label="Crew name"
-        className="card w-full px-4 py-4 text-lg font-bold outline-none ring-ember placeholder:text-muted/60 focus:ring-2" />
-      <div className="grid grid-cols-4 gap-2">
-        {EMOJIS.map((x) => (
-          <button key={x} onClick={() => setE(x)} aria-pressed={e === x} className="tile py-3 text-2xl">{x}</button>
-        ))}
-      </div>
-      <button disabled={!n.trim() || busy} onClick={() => onCreate(n.trim(), e)} className="btn btn-primary mt-2 py-4 text-lg">
-        {busy ? "Creating…" : `Create ${e} ${n.trim() || "crew"}`}
-      </button>
-    </Page>
-  );
-}
-
-function SheetFrame({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+/** Accessible modal sheet: labelled, focus moves in and back, Escape closes. */
+export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      before?.focus?.();
+    };
+  }, []);
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40" onClick={onClose}>
-      <div className="enter w-full max-w-[440px] rounded-t-[32px] bg-paper p-6 pb-8" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} aria-label="Close" className="float-right rounded-full bg-stone p-1.5"><X className="h-4 w-4" /></button>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="dialog-title" tabIndex={-1}
+        className="enter max-h-[92dvh] w-full max-w-[440px] overflow-y-auto rounded-t-2xl border border-stone bg-paper p-6 pb-8 outline-none" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h2 id="dialog-title" className="text-2xl font-medium leading-tight tracking-tight">{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-stone"><X className="h-4 w-4" aria-hidden /></button>
+        </div>
         {children}
       </div>
     </div>
   );
 }
 
-function ApplePay({ onPay, busy }: { onPay: (amt: number) => void; busy: boolean }) {
+function ApplePaySheet({ onPay, busy }: { onPay: (amt: number) => void; busy: boolean }) {
   const [amt, setAmt] = useState(50);
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-extrabold tracking-tight">Add money</h2>
-      <div className="grid grid-cols-3 gap-2">
-        {[25, 50, 100].map((a) => (
-          <button key={a} onClick={() => setAmt(a)} aria-pressed={amt === a} className="tile py-4 text-xl font-extrabold">${a}</button>
-        ))}
-      </div>
-      <div className="card space-y-2 p-4 text-sm font-bold">
-        <Row k="Card" v="Apple Pay · Visa ••4242" />
+      <fieldset>
+        <legend className="mb-2 text-sm text-muted">Amount</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {[20, 50, 100].map((a) => (
+            <button key={a} onClick={() => setAmt(a)} aria-pressed={amt === a} className="tile min-h-12 py-3 text-xl font-medium">${a}</button>
+          ))}
+        </div>
+      </fieldset>
+      <div className="card space-y-2 p-4 text-sm">
+        <Row k="Pay with" v="Apple Pay · Visa ••4242" />
         <Row k="Fee" v="$0.00" />
-        <p className="flex justify-between text-base font-extrabold"><span>Total</span>{usd(amt)}</p>
+        <p className="flex justify-between text-base font-medium"><span>Total</span><span className="tabular-nums">{usd(amt)}</span></p>
       </div>
-      <button onClick={() => onPay(amt)} disabled={busy} aria-label={`Pay ${usd(amt)} with Apple Pay`} className="btn w-full bg-black py-4 text-lg text-white">
-        {busy ? "Processing…" : <>Pay with <span className="font-extrabold"> Pay</span></>}
-      </button>
-      <p className="text-center text-xs font-semibold text-muted">Demo: no card is charged. You get test dollars.</p>
+      <ApplePayButton className="w-full" disabled={busy} onClick={() => onPay(amt)} label={`Pay ${usd(amt)} with Apple Pay`} />
+      {busy && <p role="status" className="flex items-center justify-center gap-2 text-sm text-muted"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Processing</p>}
+      <p className="text-center text-xs text-muted">Demo: no card is charged. You get test dollars right away.</p>
     </div>
   );
 }
 
-function AmountSheet({ title, max, cta, hint, busy, onSubmit }: { title: string; max: number; cta: string; hint: string; busy: boolean; onSubmit: (amt: number) => void }) {
+function AmountForm({ max, cta, hint, busy, onSubmit }: { max: number; cta: string; hint: string; busy: boolean; onSubmit: (amt: number) => void }) {
   const [v, setV] = useState("");
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -426,16 +399,38 @@ function AmountSheet({ title, max, cta, hint, busy, onSubmit }: { title: string;
   const n = Number(v);
   const valid = n > 0 && n <= max + 1e-9;
   return (
-    <div className="space-y-4">
-      <h2 className="pr-8 text-2xl font-extrabold tracking-tight">{title}</h2>
-      <div className="card flex items-center gap-1 px-4 py-3">
-        <span className="text-3xl font-extrabold text-muted">$</span>
+    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (valid && !busy) onSubmit(Math.min(n, max)); }}>
+      <label className="card flex items-center gap-1 px-4 py-3">
+        <span className="sr-only">Amount in dollars</span>
+        <span aria-hidden className="text-3xl text-muted">$</span>
         <input ref={ref} inputMode="decimal" value={v} onChange={(e) => setV(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
-          className="w-full bg-transparent text-4xl font-extrabold outline-none" aria-label="Amount" />
-        <button onClick={() => setV(String(Math.floor(max * 1e6) / 1e6))} className="rounded-lg bg-stone px-2 py-1 text-xs font-extrabold">Max</button>
-      </div>
-      <p className="text-sm font-semibold text-muted">{hint}</p>
-      <button disabled={!valid || busy} onClick={() => onSubmit(Math.min(n, max))} className="btn btn-primary w-full py-4 text-lg">{busy ? "Working…" : cta}</button>
-    </div>
+          className="w-full bg-transparent text-4xl font-medium outline-none" aria-describedby="amount-hint" />
+        <button type="button" onClick={() => setV(String(Math.floor(max * 100) / 100))} className="min-h-11 rounded-lg border border-stone px-3 text-sm font-medium">Max</button>
+      </label>
+      <p id="amount-hint" className="text-sm text-muted">{hint}</p>
+      <button type="submit" disabled={!valid || busy} className="btn btn-primary w-full py-4 text-lg">{busy ? "Working" : cta}</button>
+    </form>
+  );
+}
+
+function NewGroup({ onCreate, onBack, busy }: { onCreate: (name: string) => void; onBack: () => void; busy: boolean }) {
+  const [n, setN] = useState("");
+  return (
+    <Page>
+      <BackButton onClick={onBack} />
+      <h1 className="text-[32px] font-medium leading-tight tracking-tight">Start a group</h1>
+      <p className="-mt-2 text-muted">Your friends, your goals, real money on the line. Next you get an invite link for the group chat.</p>
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (n.trim() && !busy) onCreate(n.trim()); }}>
+        <label className="block">
+          <span className="mb-2 block text-sm text-muted">Group name</span>
+          <input value={n} onChange={(ev) => setN(ev.target.value.slice(0, 32))} placeholder="Sunday runners"
+            className="card w-full px-4 py-4 text-lg outline-none placeholder:text-muted/70 focus:border-forest" />
+        </label>
+        <button type="submit" disabled={!n.trim() || busy} className="btn btn-primary w-full py-4 text-lg">
+          {busy ? "Creating" : "Create group"}
+        </button>
+      </form>
+      <p className="text-xs text-muted">No wallet, no fees. We cover them.</p>
+    </Page>
   );
 }

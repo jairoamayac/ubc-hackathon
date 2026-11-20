@@ -24,9 +24,8 @@ Built for the UBC Hackathon 2026 (Consumer Applications track, Best use of Solan
 
 | | |
 |---|---|
-| Built and live on devnet | Groups with invite links and names; Apple Pay top-up (simulated); money that earns every second; commitments with a stake; friends' verification by strict majority; automatic payouts; sponsored fees; no wallet in sight |
-| Being built for the chosen idea | Each person's own goal and stake; only people who put money in can vote; forfeits split 40% platform / 60% friends who did it; appeal with a screenshot reviewed by AI and recorded on-chain (AI simulated in the demo) |
-| Next | Email login (Privy); automatic proof from Strava, Screen Time and Apple Health |
+| Built and live on devnet | Groups with invite links and names; Apple Pay top-up (simulated, test dollars); pacts where each person locks money on **their own goal**; **only people who put money in confirm** who kept their word (strict majority, never on themselves); forfeits go **95% to the friends who kept theirs, 5% to the platform**, taken once into a treasury; automatic payouts; sponsored fees; no wallet in sight |
+| Not built yet | Appeal with proof reviewed by AI (the app explains it and says it isn't built); a default outcome if nobody confirms; email login (Privy); automatic proof from Strava, Screen Time and Apple Health |
 
 The full list, with what changes in the program and in the app, is in [`docs/architecture-v2.md` §5](docs/architecture-v2.md).
 
@@ -49,7 +48,8 @@ Code: `programs/house_money/src/lib.rs` (pots, shares, yield) and `social.rs` (p
 
 ## Verified
 
-- `cargo test`: 8 unit tests (interest, share math, majority, pro-rata payouts never create shares, refunds when nobody completes).
+- `scripts/btb-e2e.mts`: 9 on-chain checks of pacts: own goal and stake on-chain, minimum stake enforced, only participants confirm, nobody confirms themselves, platform gets exactly 5% once, winners split 95% (Maria $20 → $32.67), no double claim, everyone can withdraw.
+- `cargo test`: 9 unit tests (interest, share math, majority, pro-rata payouts never create shares, refunds when nobody completes).
 - Solana MCP `program_autofixer` (security lint): 0 issues.
 - `scripts/social-e2e.mts`: 14 on-chain checks on devnet (one vote per person, nobody votes on themselves, majority decides, whoever fails pays, payouts match and conserve shares, no double claims, everyone can withdraw).
 - `scripts/e2e.mts`: 15 on-chain checks of pots and yield on devnet.
@@ -72,5 +72,5 @@ Keys live in `keys/` (git-ignored). The Worker needs `SPONSOR_KEY` as a secret: 
 
 - Test dollars; Apple Pay is simulated. Production: an on-ramp (Coinbase Onramp or MoonPay with Apple Pay) into USDC.
 - Devnet has no real yield; a reserve pays a fixed, sped-up rate. Production: USDC lending.
-- Friends can collude. Only people with money in will vote, and the appeal goes to an AI review; automatic proof sources come next.
+- Friends can collude: those who confirm also gain when someone walks away. Only people with money in can confirm and nobody confirms themselves; the AI appeal and automatic proof are the next steps.
 - Commitment contracts with forfeits are regulated (consumer protection, money transmission). This is a demo with test dollars, not a product on sale.

@@ -35,8 +35,9 @@ The culture is already there: #TheGreatLockIn, loud budgeting (42% of Gen Z prac
 
 ## 5. Business model
 
-- **Forfeits:** a cut of every lost stake. Proposal for the pitch: 40% to the platform, 60% to the friends who succeeded (configurable; 50/50 was also discussed).
-- **Later:** yield on locked deposits (the money earns while it's on the line) and challenges sponsored by brands.
+- **Forfeits:** 5% of every lost stake goes to the platform; the other 95% goes to the friends who kept their word (team decision, 20 Nov; earlier drafts said 40/60). Forfeits never go to a charity or anyone outside the group.
+- **Yield on locked deposits:** per the team's plan, what locked money earns is platform revenue (in the devnet demo it still accrues to the group pot; changing that is a follow-up). We never promise users a return.
+- **Later:** challenges sponsored by brands.
 - **Costs:** network fees (near zero on Solana), development, verification.
 - **Metrics:** goals created, completion rate compared with habit apps, friends invited per goal.
 

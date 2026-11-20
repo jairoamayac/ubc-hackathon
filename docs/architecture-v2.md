@@ -63,19 +63,19 @@ stateDiagram-v2
   Appealed --> Failed: AI rejects proof
   Did --> Settled
   Failed --> Settled: appeal window closes
-  Settled --> [*]: claim (stake + 60% of forfeits pro rata; 40% to platform)
+  Settled --> [*]: claim (stake + 95% of forfeits pro rata; 5% to platform via take_fee)
 ```
 
 ## 5. What changes to match Burn the Boats
 
 | # | Change | Program | App | Status |
 |---|---|---|---|---|
-| 1 | Each person states **their own goal** and **their own stake** when joining | `join_challenge(goal, stake)`; Entry stores goal (≤ 80 chars) and stake | join sheet asks for goal and amount | To build |
-| 2 | **Only people who put money in vote** | `vote_entry` requires the voter to have an Entry in the same commitment; majority of the other participants | voting only shown to participants | To build |
-| 3 | **Forfeit split 40% platform / 60% friends who did it** | `fee_bps` in the commitment (default 4000); the platform's cut leaves the pot to a treasury account once, at settlement | result screen shows the split | To build |
+| 1 | Each person states **their own goal** and **their own stake** when joining | `join_with_goal(goal, stake)`; goal stored in a `GoalNote` PDA (≤ 80 chars); stake ≥ the pact's minimum | goal and amount in the lock sheet | **Built** |
+| 2 | **Only people who put money in confirm** | `vote_entry` takes the voter's own Entry (seeds `entry, challenge, voter`); majority of the other participants | confirm buttons only for participants | **Built** |
+| 3 | **Forfeits: 95% to those who kept their word, 5% to the platform** | `PLATFORM_FEE_BPS = 500`; `take_fee` moves the 5% to the config-owned treasury once (`FeeTaken` PDA); `claim_challenge` pays stake + pro-rata share of 95% | result card shows the split; the first collect also takes the fee | **Built** |
 | 4 | **Appeal with proof, reviewed by AI, recorded on-chain** | `appeal(evidence_hash)` by the person within a window; `resolve_appeal(accepted)` signed only by the configured arbiter key; event with the decision | upload screenshot; show "AI reviewed: accepted / rejected" | To build (AI review simulated in the demo, per the team's plan) |
 | 5 | Claims wait until appeals close | `claim` requires all entries settled and no open appeals | — | To build |
-| 6 | **Hide yes/no bets** in the app | — | remove the Bets tab | To build |
+| 6 | **Hide yes/no bets** in the app | — | removed | **Built** |
 | 7 | Email login | — | Privy embedded wallet | Not in the hackathon build |
 | 8 | Automatic proof (Strava, Screen Time, Apple Health) | — | integrations | Next |
 | 9 | Locked deposits earn | already: stakes are pot shares, so they keep earning while locked | show "earning while on the line" | Built |
@@ -91,7 +91,7 @@ Tested today (`cargo test` 8, `scripts/e2e.mts` 15, `scripts/social-e2e.mts` 14,
 4. One vote per voter per entry; nobody votes on their own entry; a strict majority is final.
 5. If nobody completed, everyone is refunded.
 
-To add with §5: only participants vote; the platform cut is taken exactly once and never exceeds `fee_bps` of the forfeits; only the arbiter key can resolve an appeal, only once, only for an entry that the crew marked as failed and that appealed in time.
+Added and tested (`btb-e2e.mts` 9/9): only participants vote; the platform cut is exactly 5% of the forfeits, only if someone kept their word, taken once. Still to add: only the arbiter key can resolve an appeal, once, for an entry marked failed that appealed in time; a default outcome when nobody confirms.
 
 ## 7. Trust model
 

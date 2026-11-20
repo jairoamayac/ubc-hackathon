@@ -1,31 +1,28 @@
 "use client";
 
-// The crew room: your savings with the crew, bets on real-life moments and challenges where whoever fails pays.
-// Everything is staked from your part of the crew pot, so stakes keep earning while they are locked.
-import { ArrowLeft, Check, Clock, Gavel, Link2, Loader2, Plus, Swords, Trophy, Users, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+// A group: the people, their money, and pacts. In a pact each person locks money on their own goal;
+// when time is up the people who put money in confirm who kept their word. Walk away and you lose it:
+// 95% to the friends who kept theirs, 5% to the platform. Everything here is a Solana transaction,
+// sponsored, with no wallet in sight.
+import { Check, Clock, Link2, Loader2, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
-import type { BetView, ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "@/lib/house-money/solana/live";
+import type { ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "@/lib/house-money/solana/live";
 import * as hm from "@/lib/house-money/solana/hm";
+import { PROJECT_NAME } from "@/lib/brand";
+import { BackButton, Dialog, type Act } from "./CrewsApp";
 import { usd } from "./ui";
 
-type Act = (label: string, fn: () => Promise<unknown>, done?: string) => Promise<boolean>;
-type RoomSheet =
-  | null
-  | { id: "new-bet" }
-  | { id: "new-challenge" }
-  | { id: "stake"; bet: BetView; side: 1 | 2 };
+type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal" };
 
-const BET_IDEAS = ["Will Leo kiss the girl in red tonight?", "Does the trip finally leave the group chat?", "Will Alex make his 6 a.m. flight?", "Who's buying the first round? Maya?"];
-const CHALLENGE_IDEAS = ["Gym 3 times this week", "No takeout for 7 days", "Save $50 this week", "In bed before midnight, all week"];
-const DURATIONS: [string, number][] = [["1 min", 1], ["10 min", 10], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["1 week", 10080]];
+const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
+const DURATIONS: [string, number][] = [["2 minutes", 2], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["3 days", 4320], ["1 week", 10080]];
 
 export function CrewRoom(props: {
   client: LiveClient;
   crew: CrewView;
   snap: Snapshot;
   now: number;
-  rank: number;
   busy: string | null;
   value: number;
   act: Act;
@@ -35,9 +32,9 @@ export function CrewRoom(props: {
 }) {
   const { client, crew, now, busy, act } = props;
   const [detail, setDetail] = useState<CrewDetail | null>(null);
-  const [tab, setTab] = useState<"bets" | "challenges">("bets");
   const [sheet, setSheet] = useState<RoomSheet>(null);
   const [celebrate, setCelebrate] = useState(0);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -63,26 +60,27 @@ export function CrewRoom(props: {
   };
 
   const me = crew.me;
-  // Money you have on bets and challenges still counts as yours until the crew decides.
-  const inPlay = detail
-    ? detail.bets.reduce((s, b) => s + (b.mine && !b.mine.claimed ? (b.bet.outcome === hm.OUTCOME.OPEN ? b.mine.usd : b.mine.payoutUsd) : 0), 0) +
-      detail.challenges.reduce((s, c) => {
+  // Money locked on goals still counts as yours until your friends confirm.
+  const locked = detail
+    ? detail.challenges.reduce((s, c) => {
         if (!c.mine || c.mine.entry.claimed) return s;
         const settled = c.challenge.participants > 0 && c.challenge.decided === c.challenge.participants;
         return s + (settled ? c.mine.payoutUsd : c.mine.usd);
       }, 0)
     : 0;
-  const total = props.value + inPlay;
-  const members = detail?.people.length ?? crew.members;
-  const live = detail ? detail.bets.filter((b) => b.bet.outcome === hm.OUTCOME.OPEN).length + detail.challenges.filter((c) => c.challenge.decided < c.challenge.participants || c.challenge.participants === 0).length : 0;
+  const pacts = detail?.challenges ?? [];
 
   const invite = async () => {
     const url = `${location.origin}/?crew=${crew.address.toBase58()}`;
     try {
-      if (navigator.share) await navigator.share({ title: `Join ${crew.name} on House Money`, url });
-      else await navigator.clipboard.writeText(url);
+      if (navigator.share) await navigator.share({ title: `Join ${crew.name} on ${PROJECT_NAME}`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      }
     } catch {
-      /* user closed the share sheet */
+      /* the person closed the share sheet */
     }
   };
 
@@ -90,108 +88,100 @@ export function CrewRoom(props: {
     <div className="enter flex flex-1 flex-col gap-4 px-5 pb-8 pt-6">
       {celebrate > 0 && <Confetti key={celebrate} />}
       <div className="flex items-center justify-between">
-        <button onClick={props.onBack} className="flex items-center gap-1 font-bold text-muted"><ArrowLeft className="h-5 w-5" /> Back</button>
-        <button onClick={invite} className="flex items-center gap-1.5 rounded-full bg-stone px-3 py-1.5 text-sm font-extrabold"><Link2 className="h-4 w-4" /> Invite</button>
+        <BackButton onClick={props.onBack} />
+        <button onClick={invite} className="flex min-h-11 items-center gap-1.5 rounded-full border border-stone px-4 text-sm font-medium">
+          <Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite"}
+        </button>
       </div>
 
-      <section className="sun relative overflow-hidden rounded-[28px] bg-ink p-6 text-paper">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-4xl">{crew.emoji}</p>
-            <h1 className="mt-2 text-[30px] font-extrabold leading-tight tracking-tight">{crew.name}</h1>
-            <p className="text-sm font-bold text-paper/70">#{props.rank} · {members} {members === 1 ? "member" : "members"} · {live} live</p>
-          </div>
-        </div>
-        <p className="mt-5 text-sm font-bold text-paper/70">{me ? "Your part" : "In the pot"}</p>
-        <p className="text-[38px] font-extrabold leading-none tracking-tight tabular-nums">{usd(me ? total : crew.vault)}</p>
-        {me && (
-          <p className="mt-2 text-sm font-extrabold text-sun">
-            {total - me.principal >= 0 ? "+" : "−"}${Math.abs(total - me.principal).toFixed(4)} vs. what you put in
-            {inPlay > 0 && <span className="text-paper/80"> · {usd(inPlay)} in play</span>}
-          </p>
+      <header>
+        <h1 className="flex items-center gap-2 text-[30px] font-medium leading-tight tracking-tight"><span className="dot" aria-hidden /> {crew.name}</h1>
+        <p className="text-sm text-muted">{crew.members} {crew.members === 1 ? "person" : "people"} · {pacts.length} {pacts.length === 1 ? "pact" : "pacts"}</p>
+      </header>
+
+      <section aria-labelledby="mine-title" className="card p-5">
+        <h2 id="mine-title" className="text-sm text-muted">{me ? "Your money here" : "In this group"}</h2>
+        <p className="mt-1 text-[36px] font-medium leading-none tracking-tight tabular-nums">{usd(me ? props.value + locked : crew.vault)}</p>
+        {me && locked > 0 && <p className="mt-3"><span className="pill-locked">Locked {usd(locked)}</span></p>}
+        {detail && detail.people.length > 0 && (
+          <ul className="mt-4 flex flex-wrap gap-2" aria-label="People in this group">
+            {detail.people.map((p) => (
+              <li key={p.owner.toBase58()} className={`rounded-full border px-3 py-1 text-sm ${p.isMe ? "border-forest text-forest" : "border-stone"}`}>{p.name}</li>
+            ))}
+          </ul>
         )}
-        {detail && <People people={detail.people} />}
+        {me ? (
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button onClick={props.onDeposit} className="btn btn-primary">Add money</button>
+            <button onClick={props.onWithdraw} className="btn btn-quiet">Take out</button>
+          </div>
+        ) : (
+          <button onClick={props.onDeposit} className="btn btn-primary mt-5 w-full">Join with money</button>
+        )}
       </section>
 
-      {me ? (
-        <div className="grid grid-cols-[1fr_auto] gap-3">
-          <button onClick={props.onDeposit} className="btn btn-primary py-4 text-lg">Add money</button>
-          <button onClick={props.onWithdraw} className="btn btn-quiet px-5 py-4">Take out</button>
-        </div>
-      ) : (
-        <button onClick={props.onDeposit} className="btn btn-primary py-4 text-lg"><Users className="h-5 w-5" /> Join and add money</button>
-      )}
-
-      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-stone p-1">
-        {(["bets", "challenges"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t}
-            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-extrabold transition ${tab === t ? "bg-card shadow-sm" : "text-muted"}`}>
-            {t === "bets" ? <Gavel className="h-4 w-4" /> : <Swords className="h-4 w-4" />}
-            {t === "bets" ? "Bets" : "Challenges"}
-            <span className="rounded-full bg-paper px-1.5 text-xs">{t === "bets" ? detail?.bets.length ?? 0 : detail?.challenges.length ?? 0}</span>
+      <div className="mt-2 flex items-center justify-between">
+        <h2 className="text-lg font-medium">Pacts</h2>
+        {me && (
+          <button onClick={() => setSheet({ id: "start" })} className="flex min-h-11 items-center gap-1 px-1 text-sm font-medium text-forest">
+            <Plus className="h-4 w-4" aria-hidden /> Start a pact
           </button>
-        ))}
+        )}
       </div>
 
-      {me && (
-        <button onClick={() => setSheet({ id: tab === "bets" ? "new-bet" : "new-challenge" })}
-          className="card flex items-center gap-3 p-4 text-left">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ember text-paper"><Plus className="h-5 w-5" /></span>
-          <span className="flex-1">
-            <span className="block font-extrabold">{tab === "bets" ? "New bet" : "New challenge"}</span>
-            <span className="text-xs font-bold text-muted">
-              {tab === "bets" ? "Call something that happens tonight. The crew votes what happened." : "Everyone puts in. Whoever doesn't do it pays the rest."}
-            </span>
-          </span>
-        </button>
-      )}
-
       {!detail ? (
-        <p className="flex items-center gap-2 font-bold text-muted"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</p>
-      ) : tab === "bets" ? (
-        detail.bets.length === 0 ? (
-          <Empty text="No bets yet. Start one: something your crew will argue about tomorrow." />
-        ) : (
-          detail.bets.map((b) => (
-            <BetCard key={b.bet.address.toBase58()} b={b} now={now} members={members} isMember={!!me} busy={busy}
-              onPick={(side) => setSheet({ id: "stake", bet: b, side })}
-              onVote={(choice) => run("vote", () => client.voteBet(crew.address, b.bet.address, choice), "Vote in. Majority decides.")}
-              onClaim={async () => {
-                if (await run("claim", () => client.claimBet(crew.address, b.bet.address), b.mine && b.mine.payoutUsd > 0 ? `${usd(b.mine.payoutUsd)} back in your part of the pot.` : "Settled.")) setCelebrate((x) => x + 1);
-              }} />
-          ))
-        )
-      ) : detail.challenges.length === 0 ? (
-        <Empty text="No challenges yet. Put money on a habit: whoever skips it pays the rest." />
+        <p className="flex items-center gap-2 text-muted" role="status"><Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Loading pacts</p>
+      ) : pacts.length === 0 ? (
+        <div className="card p-5">
+          <p className="font-medium">Make the first promise.</p>
+          <p className="mt-1 text-sm text-muted">Start a pact, lock money on your goal, and invite the group. Everyone joins with their own goal.</p>
+          {me && <button onClick={() => setSheet({ id: "start" })} className="btn btn-primary mt-4 w-full">Start a pact</button>}
+        </div>
       ) : (
-        detail.challenges.map((c) => (
-          <ChallengeCard key={c.challenge.address.toBase58()} c={c} now={now} members={members} isMember={!!me} busy={busy}
-            onJoin={() => run("join", () => client.joinChallenge(crew.address, c.challenge.address), "You're in. Don't be the one who pays.")}
-            onJudge={(owner, passed) => run("judge", () => client.voteEntry(crew.address, c.challenge.address, owner, passed), "Vote in.")}
-            onClaim={async () => {
-              if (await run("claim", () => client.claimChallenge(crew.address, c.challenge.address), c.mine && c.mine.payoutUsd > 0 ? `${usd(c.mine.payoutUsd)} back in your part of the pot.` : "Settled.")) setCelebrate((x) => x + 1);
-            }} />
-        ))
+        <ul className="space-y-4">
+          {pacts.map((c) => (
+            <li key={c.challenge.address.toBase58()}>
+              <PactCard c={c} now={now} isMember={!!me} busy={busy}
+                onJoin={() => setSheet({ id: "join", pact: c })}
+                onConfirm={(owner, kept) => run("confirm", () => client.voteEntry(crew.address, c.challenge.address, owner, kept), "Thanks. Your answer is in.")}
+                onAppeal={() => setSheet({ id: "appeal" })}
+                onCollect={async () => {
+                  const won = c.mine && c.mine.payoutUsd > c.mine.usd;
+                  const ok = await run("collect", () => client.claimChallenge(crew.address, c.challenge.address, c.feeTaken),
+                    c.mine && c.mine.payoutUsd > 0 ? `${usd(c.mine.payoutUsd)} is back in your money.` : "Settled.");
+                  if (ok && won) setCelebrate((x) => x + 1);
+                }} />
+            </li>
+          ))}
+        </ul>
       )}
 
       {sheet && (
-        <RoomSheetFrame onClose={() => setSheet(null)}>
-          {sheet.id === "new-bet" && detail && (
-            <NewBet people={detail.people} busy={busy === "new-bet"} onCreate={async (q, subject, minutes) => {
-              if (await run("new-bet", () => client.createBet(crew.address, q, subject, minutes), "Bet is live. Tell the crew.")) setSheet(null);
-            }} />
+        <Dialog
+          title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : "Disagree with a result"}
+          onClose={() => setSheet(null)}
+        >
+          {sheet.id === "start" && (
+            <GoalForm free={props.value} min={1} withPactSettings busy={busy === "start"} cta="Lock"
+              onSubmit={async ({ goal, stake, minutes, minStake }) => {
+                if (await run("start", () => client.startCommitment(crew.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, stake),
+                  `Locked ${usd(stake)} on your goal. Invite the group to join.`)) setSheet(null);
+              }} />
           )}
-          {sheet.id === "new-challenge" && (
-            <NewChallenge busy={busy === "new-challenge"} max={props.value} onCreate={async (title, stake, minutes) => {
-              if (await run("new-challenge", () => client.createChallenge(crew.address, title, stake, minutes, true), "Challenge is live and you're in.")) setSheet(null);
-            }} />
+          {sheet.id === "join" && (
+            <GoalForm free={props.value} min={sheet.pact.stakeUsd} busy={busy === "join"} cta="Lock"
+              onSubmit={async ({ goal, stake }) => {
+                if (await run("join", () => client.joinWithGoal(crew.address, sheet.pact.challenge.address, goal, stake), `Locked ${usd(stake)} on your goal.`)) setSheet(null);
+              }} />
           )}
-          {sheet.id === "stake" && (
-            <Stake b={sheet.bet} side={sheet.side} max={props.value} busy={busy === "stake"} onStake={async (amount) => {
-              if (await run("stake", () => client.placeBet(crew.address, sheet.bet.bet.address, sheet.side, amount), `You're in: ${sheet.side === 1 ? "Yes" : "No"} for ${usd(amount)}.`)) setSheet(null);
-            }} />
+          {sheet.id === "appeal" && (
+            <div className="space-y-4 text-muted">
+              <p>If you think your friends got it wrong, you will be able to send proof, such as a screenshot of your run. An AI check reviews distance, date and route, and its decision is recorded with the result.</p>
+              <p className="text-ink">This part is not built yet. For now, results are decided by the people who put money in.</p>
+              <button onClick={() => setSheet(null)} className="btn btn-quiet w-full">Close</button>
+            </div>
           )}
-        </RoomSheetFrame>
+        </Dialog>
       )}
     </div>
   );
@@ -199,298 +189,164 @@ export function CrewRoom(props: {
 
 // ---------------------------------------------------------------- pieces
 
-function People({ people }: { people: CrewDetail["people"] }) {
-  return (
-    <div className="mt-5 flex flex-wrap gap-2">
-      {people.slice(0, 8).map((p) => (
-        <span key={p.owner.toBase58()} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-extrabold ${p.isMe ? "bg-ember text-paper" : "bg-paper/15 text-paper"}`}>
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-paper/25 text-[10px]">{p.name.slice(0, 1).toUpperCase()}</span>
-          {p.name} · {usd(p.value)}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function Empty({ text }: { text: string }) {
-  return <p className="card p-5 text-center text-sm font-semibold text-muted">{text}</p>;
-}
-
 function left(seconds: number) {
-  if (seconds <= 0) return "time's up";
+  if (seconds <= 0) return "Time is up";
   const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600), m = Math.floor((seconds % 3600) / 60), s = Math.floor(seconds % 60);
   if (d > 0) return `${d}d ${h}h left`;
   if (h > 0) return `${h}h ${m}m left`;
   return `${m}:${String(s).padStart(2, "0")} left`;
 }
 
-function Pools({ yes, no }: { yes: number; no: number }) {
-  const total = yes + no;
-  const pct = total > 0 ? Math.round((yes / total) * 100) : 50;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex h-3 overflow-hidden rounded-full bg-ink/15">
-        <span className="bg-ember transition-all" style={{ width: `${pct}%` }} />
-        <span className="flex-1 bg-ink" />
-      </div>
-      <div className="flex justify-between text-xs font-extrabold">
-        <span className="text-ember-text">YES {usd(yes)}</span>
-        <span>NO {usd(no)}</span>
-      </div>
-    </div>
-  );
-}
-
-function BetCard({ b, now, members, isMember, busy, onPick, onVote, onClaim }: {
-  b: BetView; now: number; members: number; isMember: boolean; busy: string | null;
-  onPick: (side: 1 | 2) => void; onVote: (choice: 1 | 2) => void; onClaim: () => void;
-}) {
-  const { bet } = b;
-  const isOpen = bet.outcome === hm.OUTCOME.OPEN && now < bet.closesAt;
-  const voting = bet.outcome === hm.OUTCOME.OPEN && now >= bet.closesAt;
-  const decided = bet.outcome !== hm.OUTCOME.OPEN;
-  const eligible = Math.max(1, members - (b.subjectName ? 1 : 0));
-  const need = Math.floor(eligible / 2) + 1;
-  const won = decided && b.mine && b.mine.payoutUsd > b.mine.usd;
-
-  return (
-    <article className={`card space-y-3 p-5 ${decided ? "" : "ring-1 ring-ink/5"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-lg font-extrabold leading-snug">{bet.question}</p>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${isOpen ? "bg-ember-soft text-ember-text" : voting ? "bg-sun/40 text-ink" : "bg-stone text-muted"}`}>
-          {isOpen ? "Live" : voting ? "Vote" : "Done"}
-        </span>
-      </div>
-      <p className="flex items-center gap-3 text-xs font-bold text-muted">
-        {b.subjectName && <span>About {b.subjectName}</span>}
-        <span>By {b.creatorName}</span>
-        <span>{bet.bettors} in</span>
-        {isOpen && <span className="flex items-center gap-1 text-ember-text"><Clock className="h-3.5 w-3.5" />{left(bet.closesAt - now)}</span>}
-      </p>
-      <Pools yes={b.yesUsd} no={b.noUsd} />
-
-      {isOpen && (b.mine ? (
-        <p className="rounded-xl bg-paper px-3 py-2 text-sm font-extrabold">You&apos;re in: {b.mine.side === 1 ? "YES" : "NO"} · {usd(b.mine.usd)}</p>
-      ) : isMember ? (
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => onPick(1)} className="btn btn-primary py-3">Yes</button>
-          <button onClick={() => onPick(2)} className="btn btn-ink py-3">No</button>
-        </div>
-      ) : null)}
-
-      {voting && (
-        <div className="space-y-2">
-          <p className="text-sm font-extrabold">What happened? <span className="font-bold text-muted">({bet.yesVotes + bet.noVotes} of {need} votes needed)</span></p>
-          {!isMember ? null : !b.canVote ? (
-            <p className="text-sm font-bold text-muted">It&apos;s about you, so the crew decides.</p>
-          ) : b.myVote ? (
-            <p className="text-sm font-bold text-muted">You said {b.myVote === 1 ? "YES" : "NO"}. Waiting for the crew.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button disabled={busy === "vote"} onClick={() => onVote(1)} className="btn btn-quiet py-3"><Check className="h-4 w-4" /> It happened</button>
-              <button disabled={busy === "vote"} onClick={() => onVote(2)} className="btn btn-quiet py-3"><X className="h-4 w-4" /> It didn&apos;t</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {decided && (
-        <div className={`rounded-2xl p-4 ${bet.outcome === hm.OUTCOME.YES ? "bg-ember text-paper" : "bg-ink text-paper"}`}>
-          <p className="text-xs font-extrabold uppercase tracking-widest opacity-80">The crew decided</p>
-          <p className="text-2xl font-extrabold">{bet.outcome === hm.OUTCOME.YES ? "YES, it happened" : "NO, it didn't"}</p>
-          {b.mine && (
-            <p className="mt-1 text-sm font-bold opacity-90">
-              {won ? `You won: ${usd(b.mine.usd)} → ${usd(b.mine.payoutUsd)}` : b.mine.payoutUsd > 0 ? `You get ${usd(b.mine.payoutUsd)} back` : `You lost ${usd(b.mine.usd)}`}
-            </p>
-          )}
-          {b.mine && !b.mine.claimed && (
-            <button disabled={busy === "claim"} onClick={onClaim} className="btn mt-3 w-full bg-paper py-3 text-ink">
-              {b.mine.payoutUsd > 0 ? <><Trophy className="h-4 w-4" /> Collect {usd(b.mine.payoutUsd)}</> : "Settle"}
-            </button>
-          )}
-          {b.mine?.claimed && <p className="mt-2 text-xs font-extrabold opacity-80">Collected</p>}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function ChallengeCard({ c, now, members, isMember, busy, onJoin, onJudge, onClaim }: {
-  c: ChallengeView; now: number; members: number; isMember: boolean; busy: string | null;
-  onJoin: () => void; onJudge: (owner: PublicKey, passed: boolean) => void; onClaim: () => void;
+function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onCollect }: {
+  c: ChallengeView; now: number; isMember: boolean; busy: string | null;
+  onJoin: () => void; onConfirm: (owner: PublicKey, kept: boolean) => void; onAppeal: () => void; onCollect: () => void;
 }) {
   const ch = c.challenge;
-  const running = now < ch.endsAt;
+  const open = now < ch.endsAt;
   const settled = ch.participants > 0 && ch.decided === ch.participants;
-  const need = Math.floor(Math.max(1, members - 1) / 2) + 1;
-  return (
-    <article className="card space-y-3 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-lg font-extrabold leading-snug">{ch.title}</p>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider ${running ? "bg-ember-soft text-ember-text" : settled ? "bg-stone text-muted" : "bg-sun/40 text-ink"}`}>
-          {running ? "On" : settled ? "Done" : "Judge"}
-        </span>
-      </div>
-      <p className="flex flex-wrap items-center gap-3 text-xs font-bold text-muted">
-        <span>{usd(c.stakeUsd)} each</span>
-        <span>Pot {usd(c.potUsd)}</span>
-        <span>By {c.creatorName}</span>
-        {running && <span className="flex items-center gap-1 text-ember-text"><Clock className="h-3.5 w-3.5" />{left(ch.endsAt - now)}</span>}
-      </p>
+  const amIn = !!c.mine;
+  const need = Math.floor(Math.max(1, ch.participants - 1) / 2) + 1;
+  const status = open ? "Open" : settled ? "Done" : "Confirming";
+  const lost = c.entries.filter((e) => e.entry.status === hm.ENTRY.FAILED);
+  const kept = c.entries.filter((e) => e.entry.status === hm.ENTRY.PASSED);
 
-      <ul className="space-y-2">
+  return (
+    <article className="card space-y-4 p-5" aria-label={`Pact, ${status.toLowerCase()}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted">Minimum {usd(c.stakeUsd)} · {ch.participants} in</p>
+          {open && <p className="mt-1 flex items-center gap-1 text-sm text-forest"><Clock className="h-4 w-4" aria-hidden /> {left(ch.endsAt - now)}</p>}
+        </div>
+        <span className={`shrink-0 rounded-full px-3 py-0.5 text-sm ${open ? "bg-mint text-forest" : settled ? "border border-stone text-muted" : "bg-forest text-white"}`}>{status}</span>
+      </div>
+
+      <ul className="divide-y divide-stone" aria-label="Goals in this pact">
         {c.entries.map((e) => {
           const st = e.entry.status;
           return (
-            <li key={e.entry.address.toBase58()} className="flex items-center justify-between gap-2 rounded-xl bg-paper px-3 py-2">
-              <span className="text-sm font-extrabold">{e.name}</span>
-              {st === hm.ENTRY.PASSED ? (
-                <span className="text-sm font-extrabold text-gain">Did it ✓</span>
-              ) : st === hm.ENTRY.FAILED ? (
-                <span className="text-sm font-extrabold text-ember-text">Pays ✗</span>
-              ) : running ? (
-                <span className="text-xs font-bold text-muted">in</span>
-              ) : e.isMe ? (
-                <span className="text-xs font-bold text-muted">crew is judging you</span>
-              ) : e.myVote ? (
-                <span className="text-xs font-bold text-muted">you voted · {e.entry.passVotes + e.entry.failVotes}/{need}</span>
-              ) : isMember ? (
-                <span className="flex gap-1.5">
-                  <button disabled={busy === "judge"} onClick={() => onJudge(e.entry.owner, true)} aria-label={`${e.name} did it`} className="rounded-lg bg-gain px-2.5 py-1 text-xs font-extrabold text-paper">Did it</button>
-                  <button disabled={busy === "judge"} onClick={() => onJudge(e.entry.owner, false)} aria-label={`${e.name} didn't`} className="rounded-lg bg-ember px-2.5 py-1 text-xs font-extrabold text-paper">Didn&apos;t</button>
-                </span>
-              ) : null}
+            <li key={e.entry.address.toBase58()} className="py-3 first:pt-0 last:pb-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium">{e.isMe ? "You" : e.name}</p>
+                  <p className="text-sm text-muted">{e.goal ?? "Goal not set"}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {st === hm.ENTRY.PASSED ? (
+                    <span className="text-sm font-medium text-forest">Kept it</span>
+                  ) : st === hm.ENTRY.FAILED ? (
+                    <span className="text-sm font-medium text-danger">Walked away</span>
+                  ) : (
+                    <span className="pill-locked">Locked {usd(e.stakeUsd)}</span>
+                  )}
+                </div>
+              </div>
+              {!open && st === hm.ENTRY.PENDING && (
+                <div className="mt-2">
+                  {e.isMe ? (
+                    <p className="text-sm text-muted">Your friends are confirming.</p>
+                  ) : e.myVote ? (
+                    <p className="text-sm text-muted">You answered. {e.entry.passVotes + e.entry.failVotes} of {need} answers needed.</p>
+                  ) : amIn ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button disabled={busy === "confirm"} onClick={() => onConfirm(e.entry.owner, true)} aria-label={`${e.name} kept their word`} className="btn btn-quiet min-h-11 text-sm"><Check className="h-4 w-4" aria-hidden /> Kept it</button>
+                      <button disabled={busy === "confirm"} onClick={() => onConfirm(e.entry.owner, false)} aria-label={`${e.name} walked away`} className="btn btn-quiet min-h-11 text-sm"><X className="h-4 w-4" aria-hidden /> Didn&apos;t</button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted">Only people who put money in can confirm.</p>
+                  )}
+                </div>
+              )}
             </li>
           );
         })}
-        {c.entries.length === 0 && <li className="text-sm font-bold text-muted">Nobody in yet.</li>}
+        {c.entries.length === 0 && <li className="py-2 text-sm text-muted">Nobody has locked money yet.</li>}
       </ul>
 
-      {running && isMember && !c.mine && (
-        <button disabled={busy === "join"} onClick={onJoin} className="btn btn-primary w-full py-3">I&apos;m in · put {usd(c.stakeUsd)}</button>
+      {open && isMember && !amIn && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
+
+      {settled && (
+        <div className="rounded-xl bg-mint p-4 text-sm">
+          {lost.length === 0 ? (
+            <p>Everyone kept their word. Everyone gets their money back.</p>
+          ) : kept.length === 0 ? (
+            <p>Nobody kept their word, so everyone gets their money back. No fee is taken.</p>
+          ) : (
+            <p>
+              {lost.map((e) => (e.isMe ? "You" : e.name)).join(", ")} walked away with {usd(c.forfeitUsd)} locked. {usd(c.forfeitUsd - c.feeUsd)} goes to the friends who kept their word and {usd(c.feeUsd)} to {PROJECT_NAME}.
+            </p>
+          )}
+        </div>
       )}
+
       {settled && c.mine && !c.mine.entry.claimed && (
-        <button disabled={busy === "claim"} onClick={onClaim} className="btn btn-ink w-full py-3">
-          {c.mine.payoutUsd > 0 ? <><Trophy className="h-4 w-4" /> Collect {usd(c.mine.payoutUsd)}</> : "Settle (you pay this one)"}
-        </button>
+        <div className="space-y-2">
+          <p className="font-medium">
+            {c.mine.payoutUsd > c.mine.usd ? `You kept your word: ${usd(c.mine.usd)} becomes ${usd(c.mine.payoutUsd)}.` : c.mine.payoutUsd > 0 ? `You get ${usd(c.mine.payoutUsd)} back.` : `You lost ${usd(c.mine.usd)}.`}
+          </p>
+          <button disabled={busy === "collect"} onClick={onCollect} className="btn btn-primary w-full">{c.mine.payoutUsd > 0 ? `Collect ${usd(c.mine.payoutUsd)}` : "Close this pact"}</button>
+          {c.mine.entry.status === hm.ENTRY.FAILED && <button onClick={onAppeal} className="min-h-11 w-full text-sm text-muted underline">Disagree with this result</button>}
+        </div>
       )}
+      {settled && c.mine?.entry.claimed && <p className="text-sm text-muted">Collected.</p>}
     </article>
   );
 }
 
-function RoomSheetFrame({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40" onClick={onClose}>
-      <div className="enter max-h-[90dvh] w-full max-w-[440px] overflow-y-auto rounded-t-[32px] bg-paper p-6 pb-8" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} aria-label="Close" className="float-right rounded-full bg-stone p-1.5"><X className="h-4 w-4" /></button>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Durations({ value, onChange }: { value: number; onChange: (m: number) => void }) {
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {DURATIONS.map(([label, m]) => (
-        <button key={m} onClick={() => onChange(m)} aria-pressed={value === m} className="tile py-2.5 text-sm font-extrabold">{label}</button>
-      ))}
-    </div>
-  );
-}
-
-function NewBet({ people, busy, onCreate }: { people: CrewDetail["people"]; busy: boolean; onCreate: (q: string, subject: PublicKey, minutes: number) => void }) {
-  const [q, setQ] = useState("");
-  const [subject, setSubject] = useState<string>("");
-  const [minutes, setMinutes] = useState(10);
-  const others = useMemo(() => people.filter((p) => !p.isMe), [people]);
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-extrabold tracking-tight">New bet</h2>
-      <textarea value={q} onChange={(e) => setQ(e.target.value.slice(0, 80))} rows={2} placeholder="Will Leo kiss the girl in red tonight?" aria-label="Question"
-        className="card w-full resize-none px-4 py-3 text-lg font-bold outline-none ring-ember placeholder:text-muted/60 focus:ring-2" />
-      <div className="flex flex-wrap gap-2">
-        {BET_IDEAS.map((i) => <button key={i} onClick={() => setQ(i)} className="rounded-full bg-stone px-3 py-1 text-xs font-bold">{i}</button>)}
-      </div>
-      <div>
-        <p className="mb-2 text-sm font-bold text-muted">Who is it about? (they can bet, not vote)</p>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setSubject("")} aria-pressed={subject === ""} className="tile px-3 py-2 text-sm font-extrabold">Nobody</button>
-          {others.map((p) => (
-            <button key={p.owner.toBase58()} onClick={() => setSubject(p.owner.toBase58())} aria-pressed={subject === p.owner.toBase58()} className="tile px-3 py-2 text-sm font-extrabold">{p.name}</button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <p className="mb-2 text-sm font-bold text-muted">Bets close in</p>
-        <Durations value={minutes} onChange={setMinutes} />
-      </div>
-      <button disabled={!q.trim() || busy} onClick={() => onCreate(q.trim(), subject ? new PublicKey(subject) : hm.NOBODY, minutes)} className="btn btn-primary w-full py-4 text-lg">
-        {busy ? "Creating…" : "Start the bet"}
-      </button>
-    </div>
-  );
-}
-
-function NewChallenge({ busy, max, onCreate }: { busy: boolean; max: number; onCreate: (title: string, stake: number, minutes: number) => void }) {
-  const [title, setTitle] = useState("");
-  const [stake, setStake] = useState(10);
+function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
+  free: number; min: number; busy: boolean; cta: string; withPactSettings?: boolean;
+  onSubmit: (v: { goal: string; stake: number; minutes: number; minStake: number }) => void;
+}) {
+  const [goal, setGoal] = useState("");
+  const options = useMemo(() => [5, 10, 20, 50].filter((v) => v >= min), [min]);
+  const [stake, setStake] = useState(Math.max(min, Math.min(20, Math.floor(free))));
   const [minutes, setMinutes] = useState(10080);
+  const [minStake, setMinStake] = useState(5);
+  const tooMuch = stake > free;
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-extrabold tracking-tight">New challenge</h2>
-      <input value={title} onChange={(e) => setTitle(e.target.value.slice(0, 80))} placeholder="Gym 3 times this week" aria-label="Challenge"
-        className="card w-full px-4 py-3 text-lg font-bold outline-none ring-ember placeholder:text-muted/60 focus:ring-2" />
-      <div className="flex flex-wrap gap-2">
-        {CHALLENGE_IDEAS.map((i) => <button key={i} onClick={() => setTitle(i)} className="rounded-full bg-stone px-3 py-1 text-xs font-bold">{i}</button>)}
+    <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); if (goal.trim() && !busy && !tooMuch) onSubmit({ goal: goal.trim(), stake, minutes, minStake: Math.min(minStake, stake) }); }}>
+      <label className="block">
+        <span className="mb-2 block text-sm text-muted">Your goal</span>
+        <input value={goal} onChange={(e) => setGoal(e.target.value.slice(0, 80))} placeholder="Run 21 km by Sunday"
+          className="card w-full px-4 py-3 text-lg outline-none placeholder:text-muted/70 focus:border-forest" aria-describedby="goal-ideas" />
+      </label>
+      <div id="goal-ideas" className="flex flex-wrap gap-2" aria-label="Ideas">
+        {GOAL_IDEAS.map((i) => <button type="button" key={i} onClick={() => setGoal(i)} className="min-h-9 rounded-full bg-mint px-3 text-sm text-forest">{i}</button>)}
       </div>
-      <div>
-        <p className="mb-2 text-sm font-bold text-muted">Everyone puts in</p>
+      <fieldset>
+        <legend className="mb-2 text-sm text-muted">Money you lock{min > 1 ? ` (at least ${usd(min)})` : ""}</legend>
         <div className="grid grid-cols-4 gap-2">
-          {[1, 5, 10, 20].map((v) => <button key={v} onClick={() => setStake(v)} aria-pressed={stake === v} className="tile py-2.5 font-extrabold">${v}</button>)}
+          {options.map((v) => <button type="button" key={v} onClick={() => setStake(v)} aria-pressed={stake === v} className="tile min-h-12 py-2 font-medium">${v}</button>)}
         </div>
-      </div>
-      <div>
-        <p className="mb-2 text-sm font-bold text-muted">Ends in</p>
-        <Durations value={minutes} onChange={setMinutes} />
-      </div>
-      <p className="rounded-xl bg-paper px-3 py-2 text-sm font-semibold text-muted">
-        When time is up the crew votes on each person. Whoever didn&apos;t do it loses their {usd(stake)}, split among the ones who did. The money keeps earning while it&apos;s locked.
+      </fieldset>
+      {withPactSettings && (
+        <>
+          <fieldset>
+            <legend className="mb-2 text-sm text-muted">Time to do it</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {DURATIONS.map(([label, m]) => <button type="button" key={m} onClick={() => setMinutes(m)} aria-pressed={minutes === m} className="tile min-h-11 py-2 text-sm">{label}</button>)}
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend className="mb-2 text-sm text-muted">Minimum for friends who join</legend>
+            <div className="grid grid-cols-4 gap-2">
+              {[1, 5, 10, 20].map((v) => <button type="button" key={v} onClick={() => setMinStake(v)} aria-pressed={minStake === v} className="tile min-h-11 py-2 text-sm">${v}</button>)}
+            </div>
+          </fieldset>
+        </>
+      )}
+      <p className="rounded-xl bg-mint p-3 text-sm text-ink">
+        Locked until your friends confirm. Keep your word and it comes back, plus a share of what others leave. Walk away and you lose it: 95% to the friends who kept theirs, 5% to {PROJECT_NAME}.
       </p>
-      <button disabled={!title.trim() || busy || stake > max} onClick={() => onCreate(title.trim(), stake, minutes)} className="btn btn-primary w-full py-4 text-lg">
-        {stake > max ? "Add money to this crew first" : busy ? "Creating…" : `Start it · I'm in for ${usd(stake)}`}
+      <button type="submit" disabled={!goal.trim() || busy || tooMuch} className="btn btn-primary w-full py-4 text-lg">
+        {tooMuch ? "Add money to this group first" : busy ? "Locking" : `${cta} ${usd(stake)}`}
       </button>
-    </div>
-  );
-}
-
-function Stake({ b, side, max, busy, onStake }: { b: BetView; side: 1 | 2; max: number; busy: boolean; onStake: (amount: number) => void }) {
-  const [amount, setAmount] = useState(Math.min(5, Math.floor(max)));
-  const mine = side === 1 ? b.yesUsd : b.noUsd;
-  const other = side === 1 ? b.noUsd : b.yesUsd;
-  const ifWin = amount + (other * amount) / Math.max(0.000001, mine + amount);
-  return (
-    <div className="space-y-4">
-      <p className="text-sm font-extrabold uppercase tracking-widest text-ember-text">You say {side === 1 ? "YES" : "NO"}</p>
-      <h2 className="pr-8 text-2xl font-extrabold leading-tight tracking-tight">{b.bet.question}</h2>
-      <div className="grid grid-cols-4 gap-2">
-        {[1, 5, 10, 20].map((v) => <button key={v} disabled={v > max} onClick={() => setAmount(v)} aria-pressed={amount === v} className="tile py-3 font-extrabold disabled:opacity-40">${v}</button>)}
-      </div>
-      <div className="card space-y-2 p-4 text-sm font-bold">
-        <p className="flex justify-between"><span className="text-muted">You put</span>{usd(amount)}</p>
-        <p className="flex justify-between"><span className="text-muted">If you&apos;re right (so far)</span><span className="text-gain">{usd(ifWin)}</span></p>
-        <p className="text-xs font-semibold text-muted">Comes from your part of the crew pot and keeps earning until the crew decides.</p>
-      </div>
-      <button disabled={busy || amount <= 0 || amount > max} onClick={() => onStake(amount)} className="btn btn-primary w-full py-4 text-lg">
-        {amount > max ? "Add money to this crew first" : busy ? "Locking…" : `Lock ${usd(amount)} on ${side === 1 ? "YES" : "NO"}`}
-      </button>
-    </div>
+    </form>
   );
 }
 
 function Confetti() {
-  const pieces = useMemo(() => Array.from({ length: 28 }, (_, i) => ({
-    left: (i * 37) % 100, delay: (i % 7) * 0.08, color: ["#C4442E", "#FFD65C", "#16233F", "#2E7D50"][i % 4],
+  const pieces = useMemo(() => Array.from({ length: 24 }, (_, i) => ({
+    left: (i * 37) % 100, delay: (i % 6) * 0.08, color: ["#1F5F4A", "#5FA98A", "#DDEFE5"][i % 3],
   })), []);
   return (
     <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-50 h-[480px] overflow-hidden">

@@ -50,5 +50,8 @@ The social layer grew the binary from 377 KB to 565 KB. The program account was 
 The team chose commitment with money on the line: each person stakes on their own goal, friends verify, whoever fails loses the stake; 40% of forfeits to the platform and 60% to the friends who did it; appeals with proof reviewed by AI and recorded on-chain. Framing: a commitment to yourself, not a bet.
 *Consequences:* yes/no bets on other people (D9) leave the product and the pitch; they stay in the program but the app hides them. The commitment ("challenge") code becomes the core and needs the changes listed in `architecture-v2.md` §5: personal goal and stake per person, participants-only voting, the 40/60 split, and the appeal flow.
 
+### D15. 5% platform, 95% to those who kept their word; built and branded (20 Nov)
+The team set the forfeit split at 5/95 (earlier 40/60). Built on-chain: `join_with_goal` (own goal + stake, minimum enforced), participants-only confirmation (`vote_entry` takes the voter's own Entry), `take_fee` (5% once to the treasury) and the 95% payout. Bets left the app. The UI follows the team's branding kit v0.1 ("Forest" palette, Inter, the dot and the "Locked" pill, no emoji or gradients); the name stays a single constant (`src/lib/brand.ts`) until the team picks one.
+
 ### D14. Crypto stays invisible (hackathon guide, Consumer track)
 The guide asks for consumer apps "where the crypto is invisible": no bridging, gas or seed phrases. User-facing copy talks about dollars, goals and friends; Solana details (program ID, how the chain is used) live in the README's technical section, which the Best use of Solana award requires.

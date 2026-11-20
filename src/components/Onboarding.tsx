@@ -1,23 +1,21 @@
 "use client";
 
-import { ArrowRight, Flame, Lock, Users } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useState } from "react";
+import { PROJECT_NAME, TAGLINE } from "@/lib/brand";
 
 const slides = [
   {
-    icon: <Users className="h-8 w-8" strokeWidth={2.2} />,
-    title: "Save with your crew.",
-    body: "Add money with Apple Pay and send it to a crew: your roommates, your team, your group chat. Together it grows every day.",
+    title: "Say it once. It stays said.",
+    body: "Most goals fail quietly, because walking away costs nothing. Here, you put money on your own goal, and it stays locked until you keep your word.",
   },
   {
-    icon: <Flame className="h-8 w-8" strokeWidth={2.2} />,
-    title: "See who's growing.",
-    body: "Every crew is ranked live. Watch the trending ones, join them, or beat them.",
+    title: "Your friends are the witnesses.",
+    body: "Start a pact with your friends. Each person locks money on their own goal. When time is up, the people who put money in confirm who kept their word.",
   },
   {
-    icon: <Lock className="h-8 w-8" strokeWidth={2.2} />,
-    title: "Your savings never move.",
-    body: "Feeling tryhard? Play only what your crew earned on a weekly call. Worst case, you lose those earnings. Never your savings.",
+    title: "Keep it, and get it back.",
+    body: "Keep your word and your money comes back, plus a share of what was left behind. Walk away and you lose it: 95% goes to the friends who kept theirs, 5% to us.",
   },
 ];
 
@@ -29,11 +27,11 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
   return (
     <div className="enter flex min-h-full flex-1 flex-col px-6 pb-8 pt-6">
       <div className="flex items-center gap-3">
-        <div className="bar flex-1">
+        <div className="bar flex-1" role="progressbar" aria-label="Introduction progress" aria-valuemin={1} aria-valuemax={slides.length + 1} aria-valuenow={i + 1}>
           <span style={{ width: `${((i + 1) / (slides.length + 1)) * 100}%` }} />
         </div>
         {!last && (
-          <button onClick={() => setI(slides.length)} className="text-sm font-bold text-muted">
+          <button onClick={() => setI(slides.length)} className="min-h-11 px-2 text-sm text-muted">
             Skip
           </button>
         )}
@@ -41,37 +39,43 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
 
       {!last ? (
         <div key={i} className="enter flex flex-1 flex-col justify-center gap-6">
-          <div className="sun sun-hero flex h-56 w-full items-start justify-center rounded-[32px] bg-ink pt-12 text-paper">{slides[i].icon}</div>
-          <h1 className="text-[40px] font-extrabold leading-[1.05] tracking-tight">{slides[i].title}</h1>
-          <p className="text-lg font-semibold leading-snug text-muted">{slides[i].body}</p>
+          <p className="flex items-center gap-2 text-base font-medium">
+            <span className="dot" aria-hidden /> {PROJECT_NAME}
+          </p>
+          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">{slides[i].title}</h1>
+          <p className="text-lg leading-relaxed text-muted">{slides[i].body}</p>
+          {i === 0 && <p className="text-sm text-muted">{TAGLINE}</p>}
         </div>
       ) : (
         <form
           className="enter flex flex-1 flex-col justify-center gap-5"
           onSubmit={(e) => {
             e.preventDefault();
-            onDone(name.trim() || "Ana");
+            if (name.trim()) onDone(name.trim());
           }}
         >
-          <h1 className="text-[40px] font-extrabold leading-[1.05] tracking-tight">What should your crew call you?</h1>
-          <p className="text-lg font-semibold text-muted">No passwords, no wallets, no jargon. Your account is ready in a second.</p>
-          <input
-            value={name}
-            maxLength={20}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your first name"
-            className="card w-full px-4 py-4 text-lg font-bold outline-none ring-ember placeholder:text-muted/60 focus:ring-2"
-            aria-label="First name"
-          />
-          <button type="submit" className="btn btn-primary w-full py-4 text-lg">
-            Open my account <ArrowRight className="h-5 w-5" />
+          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">What should your friends call you?</h1>
+          <p className="text-lg text-muted">No password, no wallet. Your account is ready in a second.</p>
+          <label className="block">
+            <span className="sr-only">First name</span>
+            <input
+              value={name}
+              maxLength={20}
+              autoComplete="given-name"
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your first name"
+              className="card w-full px-4 py-4 text-lg outline-none placeholder:text-muted/70 focus:border-forest"
+            />
+          </label>
+          <button type="submit" disabled={!name.trim()} className="btn btn-primary w-full py-4 text-lg">
+            Continue <ArrowRight className="h-5 w-5" aria-hidden />
           </button>
         </form>
       )}
 
       {!last && (
         <button onClick={() => setI(i + 1)} className="btn btn-primary mt-6 w-full py-4 text-lg">
-          {i === 0 ? "Get started" : "Continue"} <ArrowRight className="h-5 w-5" />
+          {i === 0 ? "Get started" : "Next"} <ArrowRight className="h-5 w-5" aria-hidden />
         </button>
       )}
     </div>

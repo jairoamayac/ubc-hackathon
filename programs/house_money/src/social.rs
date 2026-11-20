@@ -11,6 +11,12 @@
 //! S3. The subject of a bet can't vote on it; a challenge participant can't vote on their own entry.
 //! S4. Outcomes are final once a strict majority of eligible members agrees.
 //! S5. If nobody is on the winning side (or nobody completes a challenge), everyone gets their stake back.
+//!
+//! Burn the Boats (commitments): each participant states their own goal and stake; only people who
+//! staked in the same commitment can verify others; forfeits go 95% to those who did it and 5% to the
+//! platform (taken once, by `take_fee`, into the config-owned treasury vault).
+//! S6. The platform cut is exactly PLATFORM_FEE_BPS of the forfeits, only when someone completed, and only once.
+//! S7. Only participants of a commitment vote on it.
 
 use anchor_lang::prelude::*;
 
@@ -22,6 +28,10 @@ pub const MAX_PROFILE_NAME_LEN: usize = 24;
 pub const OPEN: u8 = 0;
 pub const YES: u8 = 1;
 pub const NO: u8 = 2;
+
+/// Platform share of forfeited stakes (5%). The other 95% goes to those who did it.
+pub const PLATFORM_FEE_BPS: u64 = 500;
+pub const MAX_GOAL_LEN: usize = 80;
 
 pub const PENDING: u8 = 0;
 pub const PASSED: u8 = 1;
@@ -47,7 +57,45 @@ pub fn winner_payout(own: u64, winners_total: u64, losers_total: u64) -> Result<
     u64::try_from(own as u128 + bonus).map_err(|_| HmError::MathOverflow.into())
 }
 
+/// Platform cut of the forfeits: 0 if nobody completed (everyone is refunded).
+pub fn platform_fee(passed_total: u64, failed_total: u64) -> u64 {
+    if passed_total == 0 {
+        return 0;
+    }
+    // u64 * 500 / 10_000 always fits back in u64; saturating keeps the linter and future edits honest.
+    let fee = (failed_total as u128).saturating_mul(PLATFORM_FEE_BPS as u128) / 10_000;
+    u64::try_from(fee).unwrap_or(u64::MAX).min(failed_total)
+}
+
+/// What someone who did it takes home: their stake plus a pro-rata share of 95% of the forfeits.
+pub fn commitment_payout(own: u64, passed_total: u64, failed_total: u64) -> Result<u64> {
+    let to_winners = failed_total
+        .checked_sub(platform_fee(passed_total, failed_total))
+        .ok_or(HmError::MathOverflow)?;
+    winner_payout(own, passed_total, to_winners)
+}
+
 // ---------------------------------------------------------------- accounts
+
+/// One person's goal inside a commitment ("Run 21 km by Sunday").
+#[account]
+#[derive(InitSpace)]
+pub struct GoalNote {
+    pub entry: Pubkey,
+    #[max_len(80)]
+    pub goal: String,
+    pub bump: u8,
+}
+
+/// Marker so the platform cut is taken only once per commitment (S6).
+#[account]
+#[derive(InitSpace)]
+pub struct FeeTaken {
+    pub challenge: Pubkey,
+    pub shares: u64,
+    pub amount: u64,
+    pub bump: u8,
+}
 
 #[account]
 #[derive(InitSpace)]
@@ -290,9 +338,10 @@ pub fn join_challenge_handler(ctx: Context<JoinChallenge>) -> Result<()> {
 
 pub fn vote_entry_handler(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let crew_members = ctx.accounts.crew.members;
     let c = &mut ctx.accounts.challenge;
     require!(now >= c.ends_at, HmError::BetStillOpen);
+    // S7: the voter must have staked in this same commitment (voter_entry is seeded by challenge + voter).
+    require_keys_eq!(ctx.accounts.voter_entry.challenge, c.key(), HmError::NotAParticipant);
     let e = &mut ctx.accounts.entry;
     require!(e.status == PENDING, HmError::AlreadyDecided);
     let voter = ctx.accounts.owner.key();
@@ -306,7 +355,7 @@ pub fn vote_entry_handler(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
     } else {
         e.fail_votes += 1;
     }
-    let need = majority((crew_members as u32).saturating_sub(1).max(1)) as u16;
+    let need = majority((c.participants as u32).saturating_sub(1).max(1)) as u16;
     if e.pass_votes >= need {
         e.status = PASSED;
         c.passed_shares = c.passed_shares.checked_add(e.shares).ok_or(HmError::MathOverflow)?;
@@ -329,7 +378,7 @@ pub fn claim_challenge_handler(ctx: Context<ClaimChallenge>) -> Result<()> {
     let payout = if c.passed_shares == 0 {
         e.shares // S5: nobody completed, refund
     } else if e.status == PASSED {
-        winner_payout(e.shares, c.passed_shares, c.failed_shares)?
+        commitment_payout(e.shares, c.passed_shares, c.failed_shares)?
     } else {
         0
     };
@@ -337,6 +386,78 @@ pub fn claim_challenge_handler(ctx: Context<ClaimChallenge>) -> Result<()> {
     let m = &mut ctx.accounts.member;
     m.shares = m.shares.checked_add(payout).ok_or(HmError::MathOverflow)?;
     emit!(ChallengeClaimed { challenge: c.key(), owner: m.owner, shares: payout });
+    Ok(())
+}
+
+/// Join a commitment with your own goal and your own stake (in dollars, at least the commitment's minimum).
+pub fn join_with_goal_handler(ctx: Context<JoinWithGoal>, goal: String, stake: u64) -> Result<()> {
+    require!(!goal.trim().is_empty() && goal.len() <= MAX_GOAL_LEN, HmError::BadName);
+    require!(!ctx.accounts.member.open_call, HmError::CallOpen);
+    let now = Clock::get()?.unix_timestamp;
+    let c = &mut ctx.accounts.challenge;
+    require!(now < c.ends_at, HmError::BetClosed);
+    require!(stake >= c.stake, HmError::StakeTooLow);
+    let vault = ctx.accounts.crew_vault.amount;
+    let total = ctx.accounts.crew.total_shares;
+    let shares = crate::shares_for_assets(stake, total, vault, true)?;
+    let m = &mut ctx.accounts.member;
+    require!(shares > 0 && shares <= m.shares, HmError::NotEnoughShares);
+    m.shares -= shares;
+    c.participants = c.participants.checked_add(1).ok_or(HmError::MathOverflow)?;
+    let e = &mut ctx.accounts.entry;
+    e.challenge = c.key();
+    e.owner = m.owner;
+    e.shares = shares;
+    e.pass_votes = 0;
+    e.fail_votes = 0;
+    e.status = PENDING;
+    e.claimed = false;
+    e.bump = ctx.bumps.entry;
+    let g = &mut ctx.accounts.goal;
+    g.entry = e.key();
+    g.goal = goal;
+    g.bump = ctx.bumps.goal;
+    emit!(ChallengeJoined { challenge: c.key(), owner: m.owner, shares });
+    Ok(())
+}
+
+/// Moves the platform's 5% of the forfeits out of the group pot into the treasury, once (S6). Permissionless.
+pub fn take_fee_handler(ctx: Context<TakeFee>) -> Result<()> {
+    let c = &ctx.accounts.challenge;
+    require!(c.participants > 0 && c.decided == c.participants, HmError::NotDecided);
+    let fee_shares = platform_fee(c.passed_shares, c.failed_shares);
+    let vault = ctx.accounts.crew_vault.amount;
+    let total = ctx.accounts.crew.total_shares;
+    let amount = crate::assets_for_shares(fee_shares, total, vault)?;
+    if amount > 0 {
+        let creator = ctx.accounts.crew.creator;
+        let id = ctx.accounts.crew.crew_id.to_le_bytes();
+        let bump = [ctx.accounts.crew.bump];
+        let seeds: &[&[u8]] = &[b"crew", creator.as_ref(), &id, &bump];
+        anchor_spl::token_interface::transfer_checked(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                anchor_spl::token_interface::TransferChecked {
+                    from: ctx.accounts.crew_vault.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.treasury.to_account_info(),
+                    authority: ctx.accounts.crew.to_account_info(),
+                },
+                &[seeds],
+            ),
+            amount,
+            ctx.accounts.mint.decimals,
+        )?;
+    }
+    // The fee shares leave the pot together with their dollars, so everyone else's share price is unchanged.
+    let crew = &mut ctx.accounts.crew;
+    crew.total_shares = crew.total_shares.checked_sub(fee_shares).ok_or(HmError::MathOverflow)?;
+    let f = &mut ctx.accounts.fee;
+    f.challenge = c.key();
+    f.shares = fee_shares;
+    f.amount = amount;
+    f.bump = ctx.bumps.fee;
+    emit!(FeeCollected { challenge: c.key(), shares: fee_shares, amount });
     Ok(())
 }
 
@@ -459,6 +580,9 @@ pub struct VoteEntry<'info> {
     pub challenge: Account<'info, Challenge>,
     #[account(mut, seeds = [b"entry", challenge.key().as_ref(), entry.owner.as_ref()], bump = entry.bump, has_one = challenge)]
     pub entry: Account<'info, Entry>,
+    /// The voter's own stake in this commitment (S7: only participants vote).
+    #[account(seeds = [b"entry", challenge.key().as_ref(), owner.key().as_ref()], bump = voter_entry.bump)]
+    pub voter_entry: Account<'info, Entry>,
     #[account(init, payer = payer, space = 8 + Vote::INIT_SPACE,
         seeds = [b"vote", entry.key().as_ref(), owner.key().as_ref()], bump)]
     pub vote: Account<'info, Vote>,
@@ -477,7 +601,55 @@ pub struct ClaimChallenge<'info> {
     pub entry: Account<'info, Entry>,
 }
 
+#[derive(Accounts)]
+pub struct JoinWithGoal<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(seeds = [b"crew", crew.creator.as_ref(), &crew.crew_id.to_le_bytes()], bump = crew.bump)]
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"crew_vault", crew.key().as_ref()], bump = crew.vault_bump)]
+    pub crew_vault: InterfaceAccount<'info, anchor_spl::token_interface::TokenAccount>,
+    #[account(mut, seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(mut, seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(init, payer = payer, space = 8 + Entry::INIT_SPACE,
+        seeds = [b"entry", challenge.key().as_ref(), owner.key().as_ref()], bump)]
+    pub entry: Account<'info, Entry>,
+    #[account(init, payer = payer, space = 8 + GoalNote::INIT_SPACE,
+        seeds = [b"goal", entry.key().as_ref()], bump)]
+    pub goal: Account<'info, GoalNote>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct TakeFee<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(seeds = [b"config"], bump = config.bump, has_one = mint)]
+    pub config: Account<'info, crate::Config>,
+    pub mint: InterfaceAccount<'info, anchor_spl::token_interface::Mint>,
+    #[account(mut, seeds = [b"crew", crew.creator.as_ref(), &crew.crew_id.to_le_bytes()], bump = crew.bump)]
+    pub crew: Account<'info, Crew>,
+    #[account(mut, seeds = [b"crew_vault", crew.key().as_ref()], bump = crew.vault_bump)]
+    pub crew_vault: InterfaceAccount<'info, anchor_spl::token_interface::TokenAccount>,
+    /// The platform treasury: the config-owned "house" vault.
+    #[account(mut, seeds = [b"house_vault"], bump = config.house_vault_bump)]
+    pub treasury: InterfaceAccount<'info, anchor_spl::token_interface::TokenAccount>,
+    #[account(seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(init, payer = payer, space = 8 + FeeTaken::INIT_SPACE,
+        seeds = [b"fee", challenge.key().as_ref()], bump)]
+    pub fee: Account<'info, FeeTaken>,
+    pub token_program: anchor_lang::prelude::Interface<'info, anchor_spl::token_interface::TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
 // ---------------------------------------------------------------- events
+
+#[event]
+pub struct FeeCollected { pub challenge: Pubkey, pub shares: u64, pub amount: u64 }
 
 #[event]
 pub struct BetCreated { pub bet: Pubkey, pub crew: Pubkey, pub question: String, pub closes_at: i64 }
@@ -525,6 +697,16 @@ mod tests {
         let (w, l) = (3u64, 10u64);
         let total: u64 = [1u64, 1, 1].iter().map(|s| winner_payout(*s, w, l).unwrap()).sum();
         assert!(total <= w + l);
+    }
+
+    #[test]
+    fn platform_takes_five_percent_and_winners_the_rest() {
+        // Two did it with 100 each; one failed with 100. Fee 5, winners split 95.
+        assert_eq!(platform_fee(200, 100), 5);
+        let a = commitment_payout(100, 200, 100).unwrap();
+        assert_eq!(a, 100 + 47); // 95 * 100 / 200 = 47.5 -> 47
+        assert!(2 * a + platform_fee(200, 100) <= 300); // S1 + S6: never more than was locked
+        assert_eq!(platform_fee(0, 100), 0); // nobody did it: no fee, everyone refunded
     }
 
     #[test]

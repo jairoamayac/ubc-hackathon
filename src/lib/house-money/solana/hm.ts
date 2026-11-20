@@ -246,6 +246,8 @@ const SOCIAL_IX = {
   join_challenge: [41, 104, 214, 73, 32, 168, 76, 79],
   vote_entry: [153, 149, 139, 2, 39, 46, 186, 44],
   claim_challenge: [132, 167, 9, 45, 203, 244, 30, 171],
+  join_with_goal: [164, 7, 145, 205, 198, 59, 220, 112],
+  take_fee: [78, 179, 29, 200, 7, 172, 106, 91],
 } as const;
 export const SOCIAL_ACCOUNT_DISC = {
   Profile: [184, 101, 165, 188, 95, 63, 127, 188],
@@ -254,11 +256,14 @@ export const SOCIAL_ACCOUNT_DISC = {
   Challenge: [119, 250, 161, 121, 119, 81, 22, 208],
   Entry: [63, 18, 152, 113, 215, 246, 221, 250],
   Vote: [96, 91, 104, 57, 145, 35, 172, 155],
+  GoalNote: [159, 11, 5, 248, 151, 135, 70, 170],
+  FeeTaken: [231, 203, 37, 243, 74, 2, 31, 230],
 } as const;
 /** Discriminators of social instructions where account #0 only pays rent (used by the edge API). */
 export const SOCIAL_PAYER_IXS = [
   SOCIAL_IX.set_profile, SOCIAL_IX.create_bet, SOCIAL_IX.place_bet, SOCIAL_IX.vote_bet,
   SOCIAL_IX.create_challenge, SOCIAL_IX.join_challenge, SOCIAL_IX.vote_entry,
+  SOCIAL_IX.join_with_goal, SOCIAL_IX.take_fee,
 ].map((d) => d.join(","));
 
 export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
@@ -271,6 +276,22 @@ export const positionPda = (bet: PublicKey, owner: PublicKey) => pda([enc("posit
 export const challengePda = (crew: PublicKey, id: bigint) => pda([enc("challenge"), crew.toBytes(), le64(id)]);
 export const entryPda = (challenge: PublicKey, owner: PublicKey) => pda([enc("entry"), challenge.toBytes(), owner.toBytes()]);
 export const votePda = (target: PublicKey, voter: PublicKey) => pda([enc("vote"), target.toBytes(), voter.toBytes()]);
+export const goalPda = (entry: PublicKey) => pda([enc("goal"), entry.toBytes()]);
+export const feePda = (challenge: PublicKey) => pda([enc("fee"), challenge.toBytes()]);
+/** Platform share of forfeits (mirrors social::PLATFORM_FEE_BPS). */
+export const PLATFORM_FEE_BPS = 500n;
+export function platformFee(passed: bigint, failed: bigint) {
+  return passed === 0n ? 0n : (failed * PLATFORM_FEE_BPS) / 10_000n;
+}
+/** Mirrors social::commitment_payout: stake + pro-rata share of 95% of the forfeits. */
+export function commitmentPayout(own: bigint, passed: bigint, failed: bigint) {
+  return winnerPayout(own, passed, failed - platformFee(passed, failed));
+}
+export function decodeGoal(d: Uint8Array) {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.GoalNote)) throw new Error("not a GoalNote account");
+  const r = new R(d);
+  return { entry: r.pk(), goal: r.str() };
+}
 
 export interface ProfileAccount { address: PublicKey; owner: PublicKey; name: string }
 export interface BetAccount {
@@ -359,10 +380,22 @@ export function joinChallengeIx(payer: PublicKey, owner: PublicKey, crew: Public
 export function voteEntryIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
   const entry = entryPda(challenge, entryOwner);
   return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner)), m(challenge, true), m(entry, true),
-    m(votePda(entry, owner), true), m(SystemProgram.programId)],
+    m(entryPda(challenge, owner)), m(votePda(entry, owner), true), m(SystemProgram.programId)],
     new W().bytes(SOCIAL_IX.vote_entry).u8(passed ? 1 : 0).done());
 }
 export function claimChallengeIx(owner: PublicKey, crew: PublicKey, challenge: PublicKey) {
   return ix([m(owner, false, true), m(crew), m(memberPda(crew, owner), true), m(challenge), m(entryPda(challenge, owner), true)],
     new W().bytes(SOCIAL_IX.claim_challenge).done());
+}
+
+export function joinWithGoalIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey, goal: string, stake: bigint) {
+  const entry = entryPda(challenge, owner);
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(crewVaultPda(crew)), m(memberPda(crew, owner), true),
+    m(challenge, true), m(entry, true), m(goalPda(entry), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.join_with_goal).str(goal).u64(stake).done());
+}
+export function takeFeeIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, challenge: PublicKey) {
+  return ix([m(payer, true, true), m(configPda()), m(mint), m(crew, true), m(crewVaultPda(crew), true), m(houseVaultPda(), true),
+    m(challenge), m(feePda(challenge), true), m(TOKEN_PROGRAM_ID), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.take_fee).done());
 }

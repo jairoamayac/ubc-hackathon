@@ -34,7 +34,7 @@ const keys = friends.map(() => Keypair.generate());
 const crewId = BigInt(Date.now());
 const crew = hm.crewPda(keys[0].publicKey, crewId);
 
-await send(conn, [hm.createCrewIx(sponsor.publicKey, keys[0].publicKey, mint, crewId, name, "🎉")], [keys[0]]);
+await send(conn, [hm.createCrewIx(sponsor.publicKey, keys[0].publicKey, mint, crewId, name, "")], [keys[0]]);
 for (const [i, [who, usd]] of friends.entries()) {
   const kp = keys[i];
   const ata = getAssociatedTokenAddressSync(mint, kp.publicKey);
@@ -49,31 +49,18 @@ for (const [i, [who, usd]] of friends.entries()) {
 }
 console.log(`  ✓ ${name}: Leo $60, Maya $80, Josh $45`);
 
-const crewInfo = async () => {
-  const [ci, vi] = await conn.getMultipleAccountsInfo([crew, hm.crewVaultPda(crew)]);
-  return { c: hm.decodeCrew(crew, ci!.data), vault: vi!.data.readBigUInt64LE(64) };
-};
-const toShares = async (usd: number) => {
-  const { c, vault } = await crewInfo();
-  return (hm.fromUsd(usd) * (c.totalShares + 1000n)) / (vault + 1n);
-};
 const now = () => Math.floor(Date.now() / 1000);
 
-// A live bet about Leo, with money on both sides
-const betId = BigInt(Date.now());
-const bet = hm.betPda(crew, betId);
-await send(conn, [hm.createBetIx(sponsor.publicKey, keys[1].publicKey, crew, betId, "Will Leo kiss the girl in red tonight?", keys[0].publicKey, now() + MINUTES * 60)], [keys[1]]);
-await send(conn, [hm.placeBetIx(sponsor.publicKey, keys[1].publicKey, crew, bet, 1, await toShares(10))], [keys[1]]);
-await send(conn, [hm.placeBetIx(sponsor.publicKey, keys[2].publicKey, crew, bet, 2, await toShares(5))], [keys[2]]);
-await send(conn, [hm.placeBetIx(sponsor.publicKey, keys[0].publicKey, crew, bet, 1, await toShares(5))], [keys[0]]);
-console.log(`  ✓ bet "Will Leo kiss the girl in red tonight?" (Maya $10 yes, Leo $5 yes, Josh $5 no), closes in ${MINUTES} min`);
-
-// A live challenge everyone is in
+// A live pact: each friend locks money on their own goal
 const chId = BigInt(Date.now());
 const ch = hm.challengePda(crew, chId);
-await send(conn, [hm.createChallengeIx(sponsor.publicKey, keys[2].publicKey, crew, chId, "Gym 3 times this week", hm.fromUsd(10), now() + MINUTES * 60)], [keys[2]]);
-for (const kp of keys) await send(conn, [hm.joinChallengeIx(sponsor.publicKey, kp.publicKey, crew, ch)], [kp]);
-console.log(`  ✓ challenge "Gym 3 times this week" ($10 each), ends in ${MINUTES} min`);
+await send(conn, [hm.createChallengeIx(sponsor.publicKey, keys[0].publicKey, crew, chId, "Pact: this week", hm.fromUsd(5), now() + MINUTES * 60)], [keys[0]]);
+const goals = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days"];
+const stakes = [20, 20, 10];
+for (const [i, kp] of keys.entries()) {
+  await send(conn, [hm.joinWithGoalIx(sponsor.publicKey, kp.publicKey, crew, ch, goals[i], hm.fromUsd(stakes[i]))], [kp]);
+}
+console.log(`  ✓ pact: Leo $20 "${goals[0]}", Maya $20 "${goals[1]}", Josh $10 "${goals[2]}"; ends in ${MINUTES} min`);
 
 const file = new URL(`../keys/demo-${cluster}.json`, import.meta.url);
 const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
