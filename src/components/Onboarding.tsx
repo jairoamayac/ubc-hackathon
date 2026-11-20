@@ -19,7 +19,7 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
           <button onClick={() => setStep("name")} className="min-h-11 px-2 text-sm font-medium">Skip</button>
         </div>
         <h1 className="mt-4 leading-[0.95] tracking-tight">
-          <span className="block text-[44px] font-extrabold uppercase text-transparent [-webkit-text-stroke:1.5px_#2E2260]">Put something</span>
+          <span className="block text-[36px] font-extrabold uppercase text-transparent [-webkit-text-stroke:1.5px_#2E2260]">Put something</span>
           <span className="block text-[48px] font-bold">on the line.</span>
         </h1>
         <p className="mt-4 max-w-[300px] text-base">Set a goal with friends. Your money is locked until the promise is kept.</p>

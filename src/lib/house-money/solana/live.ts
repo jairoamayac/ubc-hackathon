@@ -87,7 +87,12 @@ export function loadAccount(): Keypair {
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
-  const data = (await res.json()) as T & { error?: string };
+  let data: T & { error?: string };
+  try {
+    data = (await res.json()) as T & { error?: string };
+  } catch {
+    throw new Error(res.ok ? "The server sent an unexpected answer." : `The server is not reachable right now (${res.status}).`);
+  }
   if (!res.ok || data.error) throw new Error(friendly(data.error ?? `Request failed (${res.status})`));
   return data;
 }
