@@ -4,6 +4,9 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
+import { Icon3D, LogoMark, type IconName } from "./demo/parts";
+
+const SLIDE_ICONS: IconName[] = ["padlock-key", "friends", "shield-check", "coins-stack"];
 
 const slides = [
   {
@@ -40,9 +43,12 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
 
       {!last ? (
         <div key={i} className="enter flex flex-1 flex-col justify-center gap-6">
-          <p className="flex items-center gap-2 text-base font-medium">
-            <span className="dot" aria-hidden /> {PROJECT_NAME}
+          <p className="flex items-center gap-2 text-base font-semibold">
+            <LogoMark size={28} /> {PROJECT_NAME}
           </p>
+          <div className="relative flex h-44 items-center justify-center rounded-[24px] bg-lilac" aria-hidden>
+            <Icon3D name={SLIDE_ICONS[i % SLIDE_ICONS.length]} size={160} className="float" />
+          </div>
           <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">{slides[i].title}</h1>
           <p className="text-lg leading-relaxed text-muted">{slides[i].body}</p>
           {i === 0 && <p className="text-sm text-muted">{TAGLINE}</p>}
@@ -65,7 +71,7 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
               autoComplete="given-name"
               onChange={(e) => setName(e.target.value)}
               placeholder="Your first name"
-              className="card w-full px-4 py-4 text-lg outline-none placeholder:text-muted/70 focus:border-forest"
+              className="card w-full px-4 py-4 text-lg outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-deep"
             />
           </label>
           <button type="submit" disabled={!name.trim()} className="btn btn-primary w-full py-4 text-lg">
@@ -80,7 +86,7 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
         </button>
       )}
       {i === 0 && (
-        <Link href="/demo" className="mt-3 flex min-h-11 items-center justify-center text-sm text-forest underline">
+        <Link href="/demo" className="mt-3 flex min-h-11 items-center justify-center text-sm font-medium text-deep underline">
           See the whole story in 75 seconds
         </Link>
       )}

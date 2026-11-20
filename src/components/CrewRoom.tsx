@@ -12,11 +12,12 @@ import * as hm from "@/lib/house-money/solana/hm";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE } from "@/lib/brand";
 import { coachGoal } from "@/lib/coach";
 import { AppealSheet } from "./AppealSheet";
+import { VerifySheet } from "./VerifySheet";
 import { StakePicker } from "./StakePicker";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
 import { usd } from "@/lib/format";
 
-type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView };
+type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView } | { id: "verify"; pact: ChallengeView };
 
 const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
 const DURATIONS: [string, number][] = [["2 minutes", 2], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["3 days", 4320], ["1 week", 10080]];
@@ -148,6 +149,7 @@ export function CrewRoom(props: {
                 onJoin={() => setSheet({ id: "join", pact: c })}
                 onConfirm={(owner, kept) => run("confirm", () => client.voteEntry(crew.address, c.challenge.address, owner, kept), "Thanks. Your answer is in.")}
                 onAppeal={() => setSheet({ id: "appeal", pact: c })}
+                onVerify={() => setSheet({ id: "verify", pact: c })}
                 onCollect={async () => {
                   const won = c.mine && c.mine.payoutUsd > c.mine.usd;
                   const ok = await run("collect", () => client.claimChallenge(crew.address, c.challenge.address, c.feeTaken),
@@ -161,7 +163,7 @@ export function CrewRoom(props: {
 
       {sheet && (
         <Dialog
-          title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : "Disagree with a result"}
+          title={sheet.id === "start" ? "Start a pact" : sheet.id === "join" ? "Lock money on your goal" : sheet.id === "verify" ? "Verify with Grok" : "Disagree with a result"}
           onClose={() => setSheet(null)}
         >
           {sheet.id === "start" && (
@@ -178,6 +180,7 @@ export function CrewRoom(props: {
               }} />
           )}
           {sheet.id === "appeal" && <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)} />}
+          {sheet.id === "verify" && <VerifySheet pact={sheet.pact} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
     </div>
@@ -194,9 +197,9 @@ function left(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")} left`;
 }
 
-function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onCollect }: {
+function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onVerify, onCollect }: {
   c: ChallengeView; now: number; isMember: boolean; busy: string | null;
-  onJoin: () => void; onConfirm: (owner: PublicKey, kept: boolean) => void; onAppeal: () => void; onCollect: () => void;
+  onJoin: () => void; onConfirm: (owner: PublicKey, kept: boolean) => void; onAppeal: () => void; onVerify: () => void; onCollect: () => void;
 }) {
   const ch = c.challenge;
   const open = now < ch.endsAt;
@@ -266,6 +269,8 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
       </ul>
 
       {open && isMember && !amIn && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
+
+      {!settled && amIn && <button onClick={onVerify} className="min-h-11 w-full text-sm text-muted underline">Public goal, like X followers? Verify with Grok</button>}
 
       {settled && <ResultBreakdown c={c} lostCount={lost.length} keptCount={kept.length} />}
 
