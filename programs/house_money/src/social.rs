@@ -17,6 +17,12 @@
 //! platform (taken once, by `take_fee`, into the config-owned treasury vault).
 //! S6. The platform cut is exactly PLATFORM_FEE_BPS of the forfeits, only when someone completed, and only once.
 //! S7. Only participants of a commitment vote on it.
+//!
+//! Disputes (QuickNode Streams / Grok Bot appeals): `open_dispute` lets a participant flag one entry of a
+//! commitment as contested. It writes a separate `Dispute` PDA (so no existing account changes size) and logs
+//! `KEPT:DisputeOpened ...` plus a `DisputeOpened` event, which an off-chain Stream picks up.
+//! S9. Only participants can open a dispute, only once per entry, only after the commitment ends and before
+//!     the entry is collected. Opening a dispute moves no money and does not block settlement (advisory flag).
 //! S8. No commitment can lock money forever: after `ends_at + VOTE_WINDOW_SECS` anyone can finalize an
 //!     undecided entry (plurality of cast votes; a tie or no votes refunds it).
 
@@ -34,6 +40,16 @@ pub const NO: u8 = 2;
 /// Platform share of forfeited stakes (5%). The other 95% goes to those who did it.
 pub const PLATFORM_FEE_BPS: u64 = 500;
 pub const MAX_GOAL_LEN: usize = 80;
+
+/// Dispute reason codes (opaque to the program, shown by the app).
+pub const DISPUTE_OTHER: u8 = 0;
+/// "The proof does not show what it claims."
+pub const DISPUTE_PROOF: u8 = 1;
+/// "I did it and the group marked me as missed" (an appeal by the entry's own owner).
+pub const DISPUTE_APPEAL: u8 = 2;
+/// "The group marked this as done and it was not."
+pub const DISPUTE_FALSE_PASS: u8 = 3;
+pub const MAX_DISPUTE_REASON: u8 = DISPUTE_FALSE_PASS;
 
 pub const PENDING: u8 = 0;
 pub const PASSED: u8 = 1;
@@ -183,6 +199,21 @@ pub struct Entry {
     pub fail_votes: u16,
     pub status: u8,
     pub claimed: bool,
+    pub bump: u8,
+}
+
+/// A contested entry. One per entry (PDA seeded by the entry), created by `open_dispute`.
+/// Kept apart from `Entry` on purpose: adding a field to `Entry` would break every existing account.
+#[account]
+#[derive(InitSpace)]
+pub struct Dispute {
+    pub challenge: Pubkey,
+    pub entry: Pubkey,
+    /// The entry's owner (the person whose result is contested).
+    pub member: Pubkey,
+    pub opener: Pubkey,
+    pub reason: u8,
+    pub opened_at: i64,
     pub bump: u8,
 }
 
@@ -386,6 +417,37 @@ pub fn vote_entry_handler(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
         c.decided += 1;
         emit!(EntryDecided { challenge: c.key(), owner: e.owner, status: e.status });
     }
+    Ok(())
+}
+
+/// Flags one entry as contested and announces it in the logs for off-chain listeners (QuickNode Streams).
+pub fn open_dispute_handler(ctx: Context<OpenDispute>, reason: u8) -> Result<()> {
+    require!(reason <= MAX_DISPUTE_REASON, HmError::BadReason);
+    let now = Clock::get()?.unix_timestamp;
+    let c = &ctx.accounts.challenge;
+    // Same window as voting: the commitment is over, so there is a result to contest...
+    require!(now >= c.ends_at, HmError::BetStillOpen);
+    // ...and the entry has not been collected yet.
+    let e = &ctx.accounts.entry;
+    require!(!e.claimed, HmError::AlreadyClaimed);
+    // S9: the opener must have staked in this same commitment (opener_entry is seeded by challenge + opener).
+    require_keys_eq!(ctx.accounts.opener_entry.challenge, c.key(), HmError::NotAParticipant);
+
+    let d = &mut ctx.accounts.dispute;
+    d.challenge = c.key();
+    d.entry = e.key();
+    d.member = e.owner;
+    d.opener = ctx.accounts.opener.key();
+    d.reason = reason;
+    d.opened_at = now;
+    d.bump = ctx.bumps.dispute;
+
+    // One plain-text line with a fixed prefix: easy to filter in a Stream and to parse without an IDL.
+    msg!(
+        "KEPT:DisputeOpened challenge={} member={} disputer={} reason={} dispute={}",
+        d.challenge, d.member, d.opener, reason, d.key()
+    );
+    emit!(DisputeOpened { challenge: d.challenge, member: d.member, disputer: d.opener, reason, dispute: d.key() });
     Ok(())
 }
 
@@ -627,6 +689,26 @@ pub struct VoteEntry<'info> {
 }
 
 #[derive(Accounts)]
+pub struct OpenDispute<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub opener: Signer<'info>,
+    #[account(seeds = [b"challenge", challenge.crew.as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump)]
+    pub challenge: Account<'info, Challenge>,
+    /// The contested entry.
+    #[account(seeds = [b"entry", challenge.key().as_ref(), entry.owner.as_ref()], bump = entry.bump, has_one = challenge)]
+    pub entry: Account<'info, Entry>,
+    /// The opener's own stake in this commitment (S9: only participants open disputes).
+    #[account(seeds = [b"entry", challenge.key().as_ref(), opener.key().as_ref()], bump = opener_entry.bump)]
+    pub opener_entry: Account<'info, Entry>,
+    /// `init` makes a second dispute on the same entry fail.
+    #[account(init, payer = payer, space = 8 + Dispute::INIT_SPACE,
+        seeds = [b"dispute", entry.key().as_ref()], bump)]
+    pub dispute: Account<'info, Dispute>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct FinalizeEntry<'info> {
     pub crew: Account<'info, Crew>,
     #[account(mut, seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
@@ -711,6 +793,8 @@ pub struct ChallengeCreated { pub challenge: Pubkey, pub crew: Pubkey, pub title
 pub struct ChallengeJoined { pub challenge: Pubkey, pub owner: Pubkey, pub shares: u64 }
 #[event]
 pub struct EntryDecided { pub challenge: Pubkey, pub owner: Pubkey, pub status: u8 }
+#[event]
+pub struct DisputeOpened { pub challenge: Pubkey, pub member: Pubkey, pub disputer: Pubkey, pub reason: u8, pub dispute: Pubkey }
 #[event]
 pub struct ChallengeClaimed { pub challenge: Pubkey, pub owner: Pubkey, pub shares: u64 }
 

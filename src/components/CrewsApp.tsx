@@ -357,7 +357,10 @@ export default function CrewsApp() {
                 if (await act("withdraw", () => client!.withdraw(c, all ? "all" : amt), `${usd(amt)} moved to your balance.`)) setSheet(null);
               }} />
           )}
-          {sheet.id === "appeal" && <AppealSheet pact={sheet.v} onClose={() => setSheet(null)} />}
+          {sheet.id === "appeal" && (
+            <AppealSheet pact={sheet.v} onClose={() => setSheet(null)}
+              recordDispute={client && sheet.v.mine ? () => client.openDispute(sheet.v.challenge.address, sheet.v.mine!.entry.owner) : undefined} />
+          )}
           {sheet.id === "verify" && <VerifySheet pact={sheet.v} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
