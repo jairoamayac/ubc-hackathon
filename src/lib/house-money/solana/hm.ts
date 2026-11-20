@@ -268,7 +268,7 @@ export const SOCIAL_PAYER_IXS = [
 ].map((d) => d.join(","));
 
 export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
-export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2 } as const;
+export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2, REFUNDED: 3 } as const;
 export const NOBODY = PublicKey.default;
 
 export const profilePda = (owner: PublicKey) => pda([enc("profile"), owner.toBytes()]);

@@ -54,6 +54,19 @@ export interface CrewDetail { crew: PublicKey; people: PersonView[]; bets: BetVi
 
 const KEY = "hm.account.v1";
 
+/** Where a round stands for the person looking at it. */
+export type Phase = "open" | "voting" | "finalizable" | "settled";
+export function phaseOf(v: ChallengeView, nowSecs: number): Phase {
+  const ch = v.challenge;
+  if (ch.participants > 0 && ch.decided === ch.participants) return "settled";
+  if (nowSecs < ch.endsAt) return "open";
+  return canFinalize(v, nowSecs) ? "finalizable" : "voting";
+}
+/** True once the voting window after the deadline has passed and something is still undecided. */
+export function canFinalize(v: ChallengeView, nowSecs: number) {
+  return nowSecs >= v.challenge.endsAt + hm.VOTE_WINDOW_SECS && v.entries.some((e) => e.entry.status === hm.ENTRY.PENDING);
+}
+
 // Duplicate demo crews left on devnet by interrupted seed runs. Crews cannot be deleted on-chain,
 // so the app hides them (their funds stay in their vaults).
 const HIDDEN_CREWS = new Set([
@@ -300,7 +313,7 @@ export class LiveClient {
       const mine = es.find((e) => e.isMe);
       let payout = 0n;
       if (mine && ch.participants > 0 && ch.decided === ch.participants) {
-        payout = ch.passedShares === 0n ? mine.entry.shares : mine.entry.status === hm.ENTRY.PASSED ? hm.commitmentPayout(mine.entry.shares, ch.passedShares, ch.failedShares) : 0n;
+        payout = ch.passedShares === 0n || mine.entry.status === hm.ENTRY.REFUNDED ? mine.entry.shares : mine.entry.status === hm.ENTRY.PASSED ? hm.commitmentPayout(mine.entry.shares, ch.passedShares, ch.failedShares) : 0n;
       }
       return {
         challenge: ch,
@@ -377,6 +390,21 @@ export class LiveClient {
     const ixs = feeTaken ? [] : [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge)];
     ixs.push(hm.claimChallengeIx(this.owner.publicKey, crew, challenge));
     return this.send(ixs);
+  }
+  /**
+   * After the voting window (hm.VOTE_WINDOW_SECS past the deadline), settles every entry nobody decided:
+   * plurality of the votes cast, or a refund on a tie or no votes. Anyone can call it; the sponsor pays.
+   */
+  finalizePending(crew: PublicKey, view: ChallengeView) {
+    const pending = view.entries.filter((e) => e.entry.status === hm.ENTRY.PENDING);
+    if (pending.length === 0) return Promise.resolve(null);
+    return this.send(pending.map((e) => hm.finalizeEntryIx(crew, view.challenge.address, e.entry.owner)));
+  }
+  /** Finalizes what is still undecided (when the window is over), then collects. */
+  async finalizeAndClaim(crew: PublicKey, view: ChallengeView, nowSecs = Date.now() / 1000) {
+    const ch = view.challenge;
+    if (ch.decided < ch.participants && canFinalize(view, nowSecs)) await this.finalizePending(crew, view);
+    return this.claimChallenge(crew, ch.address, view.feeTaken);
   }
 
   private async send(ixs: TransactionInstruction[]) {
