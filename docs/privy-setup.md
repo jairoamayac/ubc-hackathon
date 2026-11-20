@@ -34,6 +34,8 @@ every action: app builds tx (fee payer = sponsor)
 
 ## Where the App ID goes
 
+**Already done:** `.env.production` (committed; the App ID is public) holds `NEXT_PUBLIC_PRIVY_APP_ID=cmwp0pqgn03et0gld17mispk3`, and `next build` reads it automatically, so `npm run build && npx wrangler deploy` is enough. To use a different app, override it in the shell as below or edit that file.
+
 The site is a Next.js **static export** (`output: "export"`) served by the Cloudflare Worker `house-money-ubc`. `NEXT_PUBLIC_*` variables are baked into the JavaScript **when `npm run build` runs**, so they must exist in the environment of the build, not in the Worker:
 
 ```bash
@@ -50,6 +52,10 @@ NEXT_PUBLIC_PRIVY_APP_ID=<app id>
 `wrangler.jsonc` `vars` and `wrangler secret put` do **not** reach the browser bundle, so don't put it there. `NEXT_PUBLIC_PRIVY_CLIENT_ID` is optional (only if you create an app client in the dashboard).
 
 Local test: `NEXT_PUBLIC_PRIVY_APP_ID=<app id> npm run dev`.
+
+## Tested
+
+Locally against this App ID (static build served on `http://localhost:3000`, `/api` proxied to the deployed Worker): email one-time code sign-in, account created, name taken from the email, and the first sponsored transaction (saving the name) signed by the Privy account and confirmed on devnet. Google was not clicked through (needs a Google login).
 
 ## Not covered
 
