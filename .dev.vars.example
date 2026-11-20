@@ -1,0 +1,10 @@
+# Copy to .dev.vars (git-ignored) for `npx wrangler dev`. In production set these as Worker secrets:
+#   npx wrangler secret put SPONSOR_KEY
+#   npx wrangler secret put QUICKNODE_URL
+# Never commit real values.
+
+# JSON array of the sponsor keypair (pays fees, signs top-ups). scripts/worker-local.sh fills it from keys/sponsor.json.
+SPONSOR_KEY=[1,2,3,...]
+
+# Optional private RPC (docs/quicknode.md). Empty = public RPC_URL from wrangler.jsonc.
+QUICKNODE_URL=https://<name>.solana-devnet.quiknode.pro/<token>/

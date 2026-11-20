@@ -79,6 +79,12 @@ export function disputesFromLogs(logs: string[], programId: string): Omit<ChainD
   return found;
 }
 
+/** Legacy: dispute lines found anywhere in a plain-text body (no invoke-stack check, so only for senders that hold the shared secret). */
+export function disputesFromText(text: string): ChainDispute[] {
+  const g = new RegExp(DISPUTE_LINE.source, "g");
+  return [...text.matchAll(g)].map((m) => ({ challenge: m[1], member: m[2], disputer: m[3], reason: Number(m[4]), dispute: m[5] }));
+}
+
 const isStr = (v: unknown, re: RegExp): v is string => typeof v === "string" && re.test(v);
 const B58_RE = new RegExp(`^${B58}$`);
 

@@ -21,8 +21,10 @@
 //! Disputes (QuickNode Streams / Grok Bot appeals): `open_dispute` lets a participant flag one entry of a
 //! commitment as contested. It writes a separate `Dispute` PDA (so no existing account changes size) and logs
 //! `KEPT:DisputeOpened ...` plus a `DisputeOpened` event, which an off-chain Stream picks up.
-//! S8. Only participants can open a dispute, only once per entry, only after the commitment ends and before
+//! S9. Only participants can open a dispute, only once per entry, only after the commitment ends and before
 //!     the entry is collected. Opening a dispute moves no money and does not block settlement (advisory flag).
+//! S8. No commitment can lock money forever: after `ends_at + VOTE_WINDOW_SECS` anyone can finalize an
+//!     undecided entry (plurality of cast votes; a tie or no votes refunds it).
 
 use anchor_lang::prelude::*;
 
@@ -52,6 +54,22 @@ pub const MAX_DISPUTE_REASON: u8 = DISPUTE_FALSE_PASS;
 pub const PENDING: u8 = 0;
 pub const PASSED: u8 = 1;
 pub const FAILED: u8 = 2;
+/// Not enough votes by the end of the voting window: the stake goes back to its owner, untouched.
+pub const REFUNDED: u8 = 3;
+/// Voting window after the deadline. Short for the demo; a production value would be ~48h.
+pub const VOTE_WINDOW_SECS: i64 = 120;
+
+/// Outcome of an entry nobody could settle by strict majority before the window closed:
+/// a plurality of cast votes decides; a tie or no votes refunds the stake (S8).
+pub fn finalize_outcome(pass_votes: u16, fail_votes: u16) -> u8 {
+    if pass_votes > fail_votes {
+        PASSED
+    } else if fail_votes > pass_votes {
+        FAILED
+    } else {
+        REFUNDED
+    }
+}
 
 // ---------------------------------------------------------------- pure math (unit tested)
 
@@ -346,7 +364,7 @@ pub fn join_challenge_handler(ctx: Context<JoinChallenge>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let c = &mut ctx.accounts.challenge;
     require!(now < c.ends_at, HmError::BetClosed);
-    let vault = ctx.accounts.crew_vault.amount;
+    let vault = crate::crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?;
     let total = ctx.accounts.crew.total_shares;
     // The stake is a dollar amount; lock the shares worth that much right now (rounded up).
     let shares = crate::shares_for_assets(c.stake, total, vault, true)?;
@@ -371,6 +389,7 @@ pub fn vote_entry_handler(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let c = &mut ctx.accounts.challenge;
     require!(now >= c.ends_at, HmError::BetStillOpen);
+    require!(now < c.ends_at.saturating_add(VOTE_WINDOW_SECS), HmError::VotingClosed);
     // S7: the voter must have staked in this same commitment (voter_entry is seeded by challenge + voter).
     require_keys_eq!(ctx.accounts.voter_entry.challenge, c.key(), HmError::NotAParticipant);
     let e = &mut ctx.accounts.entry;
@@ -411,7 +430,7 @@ pub fn open_dispute_handler(ctx: Context<OpenDispute>, reason: u8) -> Result<()>
     // ...and the entry has not been collected yet.
     let e = &ctx.accounts.entry;
     require!(!e.claimed, HmError::AlreadyClaimed);
-    // S8: the opener must have staked in this same commitment (opener_entry is seeded by challenge + opener).
+    // S9: the opener must have staked in this same commitment (opener_entry is seeded by challenge + opener).
     require_keys_eq!(ctx.accounts.opener_entry.challenge, c.key(), HmError::NotAParticipant);
 
     let d = &mut ctx.accounts.dispute;
@@ -437,8 +456,8 @@ pub fn claim_challenge_handler(ctx: Context<ClaimChallenge>) -> Result<()> {
     require!(c.participants > 0 && c.decided == c.participants, HmError::NotDecided);
     let e = &mut ctx.accounts.entry;
     require!(!e.claimed, HmError::AlreadyClaimed);
-    let payout = if c.passed_shares == 0 {
-        e.shares // S5: nobody completed, refund
+    let payout = if c.passed_shares == 0 || e.status == REFUNDED {
+        e.shares // S5/S8: nobody completed, or the entry was never decided: refund
     } else if e.status == PASSED {
         commitment_payout(e.shares, c.passed_shares, c.failed_shares)?
     } else {
@@ -451,6 +470,24 @@ pub fn claim_challenge_handler(ctx: Context<ClaimChallenge>) -> Result<()> {
     Ok(())
 }
 
+/// S8: after the voting window, settles an entry the group never decided. Permissionless.
+pub fn finalize_entry_handler(ctx: Context<FinalizeEntry>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let c = &mut ctx.accounts.challenge;
+    require!(now >= c.ends_at.saturating_add(VOTE_WINDOW_SECS), HmError::BetStillOpen);
+    let e = &mut ctx.accounts.entry;
+    require!(e.status == PENDING, HmError::AlreadyDecided);
+    e.status = finalize_outcome(e.pass_votes, e.fail_votes);
+    match e.status {
+        PASSED => c.passed_shares = c.passed_shares.checked_add(e.shares).ok_or(HmError::MathOverflow)?,
+        FAILED => c.failed_shares = c.failed_shares.checked_add(e.shares).ok_or(HmError::MathOverflow)?,
+        _ => {}
+    }
+    c.decided = c.decided.checked_add(1).ok_or(HmError::MathOverflow)?;
+    emit!(EntryDecided { challenge: c.key(), owner: e.owner, status: e.status });
+    Ok(())
+}
+
 /// Join a commitment with your own goal and your own stake (in dollars, at least the commitment's minimum).
 pub fn join_with_goal_handler(ctx: Context<JoinWithGoal>, goal: String, stake: u64) -> Result<()> {
     require!(!goal.trim().is_empty() && goal.len() <= MAX_GOAL_LEN, HmError::BadName);
@@ -459,7 +496,7 @@ pub fn join_with_goal_handler(ctx: Context<JoinWithGoal>, goal: String, stake: u
     let c = &mut ctx.accounts.challenge;
     require!(now < c.ends_at, HmError::BetClosed);
     require!(stake >= c.stake, HmError::StakeTooLow);
-    let vault = ctx.accounts.crew_vault.amount;
+    let vault = crate::crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?;
     let total = ctx.accounts.crew.total_shares;
     let shares = crate::shares_for_assets(stake, total, vault, true)?;
     let m = &mut ctx.accounts.member;
@@ -488,7 +525,7 @@ pub fn take_fee_handler(ctx: Context<TakeFee>) -> Result<()> {
     let c = &ctx.accounts.challenge;
     require!(c.participants > 0 && c.decided == c.participants, HmError::NotDecided);
     let fee_shares = platform_fee(c.passed_shares, c.failed_shares);
-    let vault = ctx.accounts.crew_vault.amount;
+    let vault = crate::crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?;
     let total = ctx.accounts.crew.total_shares;
     let amount = crate::assets_for_shares(fee_shares, total, vault)?;
     if amount > 0 {
@@ -661,7 +698,7 @@ pub struct OpenDispute<'info> {
     /// The contested entry.
     #[account(seeds = [b"entry", challenge.key().as_ref(), entry.owner.as_ref()], bump = entry.bump, has_one = challenge)]
     pub entry: Account<'info, Entry>,
-    /// The opener's own stake in this commitment (S8: only participants open disputes).
+    /// The opener's own stake in this commitment (S9: only participants open disputes).
     #[account(seeds = [b"entry", challenge.key().as_ref(), opener.key().as_ref()], bump = opener_entry.bump)]
     pub opener_entry: Account<'info, Entry>,
     /// `init` makes a second dispute on the same entry fail.
@@ -669,6 +706,15 @@ pub struct OpenDispute<'info> {
         seeds = [b"dispute", entry.key().as_ref()], bump)]
     pub dispute: Account<'info, Dispute>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct FinalizeEntry<'info> {
+    pub crew: Account<'info, Crew>,
+    #[account(mut, seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(mut, seeds = [b"entry", challenge.key().as_ref(), entry.owner.as_ref()], bump = entry.bump, has_one = challenge)]
+    pub entry: Account<'info, Entry>,
 }
 
 #[derive(Accounts)]
@@ -796,5 +842,37 @@ mod tests {
     #[test]
     fn nobody_won_means_refund() {
         assert_eq!(winner_payout(25, 0, 100).unwrap(), 25);
+    }
+
+    #[test]
+    fn finalize_uses_plurality_and_refunds_ties_or_silence() {
+        // S8: one participant (nobody can vote on them) -> refund, never locked.
+        assert_eq!(finalize_outcome(0, 0), REFUNDED);
+        // Two participants, the other never voted -> refund.
+        assert_eq!(finalize_outcome(0, 0), REFUNDED);
+        // Three participants, split 1-1 -> refund.
+        assert_eq!(finalize_outcome(1, 1), REFUNDED);
+        // Partial votes decide by plurality.
+        assert_eq!(finalize_outcome(1, 0), PASSED);
+        assert_eq!(finalize_outcome(0, 1), FAILED);
+        assert_eq!(finalize_outcome(2, 1), PASSED);
+    }
+
+    #[test]
+    fn matches_the_app_settlement_rule() {
+        // Same case as scripts/check-settlement.mts: five people, $50 each, two keep their word.
+        // Program works in units of 1e-6 dollars; the app shows cents.
+        let (stake, kept, missed) = (50_000_000u64, 100_000_000u64, 150_000_000u64);
+        assert_eq!(platform_fee(kept, missed), 7_500_000); // $7.50
+        assert_eq!(commitment_payout(stake, kept, missed).unwrap(), 121_250_000); // $121.25
+        let paid = 2 * commitment_payout(stake, kept, missed).unwrap() + platform_fee(kept, missed);
+        assert_eq!(paid, kept + missed); // every dollar accounted for
+    }
+
+    #[test]
+    fn fee_never_exceeds_forfeits() {
+        for f in [0u64, 1, 19, 20, 21, 1_000_000, u64::MAX / 10_000] {
+            assert!(platform_fee(1, f) <= f);
+        }
     }
 }

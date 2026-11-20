@@ -1,5 +1,5 @@
 // Browser side of the Grok Bot appeals council: start an appeal, poll for the verdict, shrink the screenshot.
-import type { AppealRequest, DisputeView, VerificationView, VerifyRequest } from "./grok";
+import type { AppealRequest, CoachResult, DisputeView, GroupMember, GroupMessage, JobView, VerificationView, VerifyRequest } from "./grok";
 
 export class AppealError extends Error {
   constructor(message: string, readonly status: number) {
@@ -24,6 +24,11 @@ export const getDispute = (id: string) => call<DisputeView>(`/api/disputes/${enc
 
 export const startVerification = (req: VerifyRequest) => call<{ verification_id: string; status: "pending" }>("/api/verify", { method: "POST", body: JSON.stringify(req) });
 export const getVerification = (id: string) => call<VerificationView>(`/api/verifications/${encodeURIComponent(id)}`);
+
+export const startCoach = (req: { raw_goal: string; member?: string; deadline?: string; context?: string }) => call<{ job_id: string; status: "pending" }>("/api/coach", { method: "POST", body: JSON.stringify(req) });
+export const askGroup = (req: { group_id: string; members: GroupMember[]; recent_chat?: string }) => call<{ job_id: string; status: "pending" }>("/api/group/ask", { method: "POST", body: JSON.stringify(req) });
+export const getCoachJob = (id: string) => call<JobView<CoachResult>>(`/api/jobs/${encodeURIComponent(id)}`);
+export const getGroupJob = (id: string) => call<JobView<{ messages: GroupMessage[] }>>(`/api/jobs/${encodeURIComponent(id)}`);
 
 /** Resizes a screenshot to at most 1280 px and re-encodes it as a jpeg, so it stays well under the Worker's limit. */
 export async function shrinkImage(file: File, maxSide = 1280): Promise<string> {

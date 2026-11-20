@@ -73,3 +73,11 @@ export interface VerificationView {
   source?: string;
   reason?: string;
 }
+
+export interface CoachResult {
+  goal: string; criterion: string; deadline: string; proof_method: string;
+  verifiable_by: "friends" | "public_data"; suggested_stake_usd: number | null; stake_reason: string; tips: string[];
+}
+export interface GroupMessage { to: string; text: string }
+export interface GroupMember { name: string; goal: string; deadline?: string; status?: string; last_proof_at?: string | null }
+export interface JobView<T> { job_id: string; kind: "coach" | "group"; status: DisputeStatus; created_at: number; decided_at?: number; error?: string; result?: T }

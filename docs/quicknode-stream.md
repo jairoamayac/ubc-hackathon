@@ -1,6 +1,6 @@
 # QuickNode Stream for Kept: setup and test plan
 
-What this does: a participant opens a dispute in the app → the program `9iBNS61W…` logs
+What this does: a participant opens a dispute in the app → the program `7nqWXrf9…` logs
 `KEPT:DisputeOpened challenge=… member=… disputer=… reason=N dispute=…` and emits a `DisputeOpened` event →
 a QuickNode Stream (Solana **devnet**) filters for that line → POSTs to our Worker → the Worker verifies the
 signature, stores the dispute in KV (`DISPUTES`), and makes sure a Grok council case exists (links to the app's
@@ -20,24 +20,24 @@ Worker URL (does not change): `https://house-money-ubc.jairoamayac.workers.dev`
 ## 0b. Program upgrade on devnet (Jairo; needs the upgrade-authority key, not done by us)
 
 * Upgrade authority: `HAEaSXy5L6fQinymFH3JZZvCgwGmVVNCbWUrMH9bd9zY` (the fee sponsor; its key is `keys/sponsor.json` on Jairo's machine, also stored as the Worker secret `SPONSOR_KEY`). No copy of it exists in the repo, its history or on the box.
-* Build: `cargo build-sbf --manifest-path programs/house_money/Cargo.toml` → `target/deploy/house_money.so` (647,696 bytes; the deployed ProgramData is 636,976 bytes, so it must grow by ≥ 10,720 bytes).
-* Cost: buffer rent ≈ **3.29 SOL** (refunded when the upgrade completes) + extending ProgramData ≈ **0.06 SOL** + fees < 0.01 SOL. Peak need ≈ **3.4 SOL**, net cost ≈ 0.06 SOL. The sponsor holds **1.87 SOL** on devnet today, so it is ≈ 1.6 SOL short for the peak: airdrop at <https://faucet.solana.com>, or pay the buffer from another funded wallet (second option below). Keep a few tenths of SOL afterwards: the sponsor also pays every user's fees.
+* Build: `cargo build-sbf --manifest-path programs/house_money/Cargo.toml` → `target/deploy/house_money.so` (710,272 bytes; the deployed ProgramData of 7nqWXrf9… is 697,568 bytes, so `solana program deploy` extends it by 12,704 bytes by itself).
+* Cost: buffer rent ≈ **3.61 SOL** (refunded when the upgrade completes) + extending ProgramData ≈ **0.07 SOL** + fees < 0.01 SOL. Peak need ≈ **3.7 SOL**, net cost ≈ 0.07 SOL. The sponsor held **9.44 SOL** on devnet on 2026-11-20, so no airdrop is needed. If it ever runs short, a funded wallet can pay for the buffer (second option below). Keep a few tenths of SOL afterwards: the sponsor also pays every user's fees.
 * Command (the CLI extends ProgramData automatically; this was verified on a local validator with CLI 4.4.1):
 
 ```bash
-solana program deploy target/deploy/house_money.so --program-id 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht \
+solana program deploy target/deploy/house_money.so --program-id 7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1 \
   --upgrade-authority keys/sponsor.json -k keys/sponsor.json -u devnet
 ```
 * Or, when the sponsor lacks SOL, a funded wallet pays for the buffer and the sponsor only signs the upgrade:
 
 ```bash
-solana program extend 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht 16384 -k <funded.json> -u devnet
+solana program extend 7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1 16384 -k <funded.json> -u devnet
 solana program write-buffer target/deploy/house_money.so -k <funded.json> -u devnet          # prints BUFFER
 solana program set-buffer-authority BUFFER --new-buffer-authority HAEaSXy5L6fQinymFH3JZZvCgwGmVVNCbWUrMH9bd9zY -k <funded.json> -u devnet
-solana program deploy --buffer BUFFER --program-id 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht \
+solana program deploy --buffer BUFFER --program-id 7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1 \
   --upgrade-authority keys/sponsor.json -k keys/sponsor.json -u devnet
 ```
-* Existing accounts are safe: no existing account struct changed (the dispute lives in its own PDA), the new instruction and error were only appended. Verified: a pact with stakes was created under the OLD program on a local validator, the program was upgraded in place, then dispute, votes, fee and payouts all ran on those old accounts.
+* Existing accounts are safe: no existing account struct changed (the dispute lives in its own PDA), the new instruction and error were only appended. Verified on a local validator: the current main program (with Kamino) was loaded, a pact with stakes was created, the program was upgraded in place to this build, then dispute, votes, fee and payouts all ran on those accounts.
 
 ## 1. Create the Stream (Josué, in his QuickNode account: Dashboard → Streams → Create Stream)
 
@@ -69,7 +69,7 @@ It keeps only `Program log: KEPT:DisputeOpened …` lines that were printed by o
 // Returns null when a batch has no dispute, so the webhook only fires for real events.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function main(stream) {
-  const PROGRAM = "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht";
+  const PROGRAM = "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1";
   const LINE = /^Program log: KEPT:DisputeOpened challenge=([1-9A-HJ-NP-Za-km-z]{32,44}) member=([1-9A-HJ-NP-Za-km-z]{32,44}) disputer=([1-9A-HJ-NP-Za-km-z]{32,44}) reason=(\d{1,3})(?: dispute=([1-9A-HJ-NP-Za-km-z]{32,44}))?$/;
   const disputes = [];
 

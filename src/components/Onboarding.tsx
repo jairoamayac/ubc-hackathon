@@ -1,95 +1,79 @@
 "use client";
 
+// First open (design/kept-v5 01-login-v2): lilac hero with the 3D padlock, then the name step.
+// There is no password: the account key is created on this device.
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
-import { Icon3D, LogoMark, type IconName } from "./demo/parts";
+import { FEE_PERCENT, KEEPERS_PERCENT } from "@/lib/brand";
+import { Icon3D } from "./kept/ui";
 
-const SLIDE_ICONS: IconName[] = ["padlock-key", "friends", "shield-check", "coins-stack"];
+/** When set (Privy), the last step signs in with Google or email instead of asking for a first name. */
+export interface SignInOptions { onGoogle: () => void; onEmail: () => void; error?: string }
 
-const slides = [
-  {
-    title: "Say it once. It stays said.",
-    body: "Most goals fail quietly, because walking away costs nothing. Here, you put money on your own goal, and it stays locked until you keep your word.",
-  },
-  {
-    title: "Your friends are the witnesses.",
-    body: "Start a pact with your friends. Each person locks money on their own goal. When time is up, the people who put money in confirm who kept their word.",
-  },
-  {
-    title: "Keep it, and get it back.",
-    body: `Keep your word and your money comes back, plus a share of what was left behind. Walk away and you lose it: ${KEEPERS_PERCENT}% goes to the friends who kept theirs, ${FEE_PERCENT}% to us.`,
-  },
-];
-
-export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
-  const [i, setI] = useState(0);
+export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void; signIn?: SignInOptions }) {
+  const [step, setStep] = useState<"hero" | "name">("hero");
   const [name, setName] = useState("");
-  const last = i === slides.length;
+
+  if (step === "hero") {
+    return (
+      <div className="enter relative flex min-h-dvh flex-1 flex-col overflow-hidden bg-lilac px-6 pb-8 pt-6 text-violet-deep sm:min-h-[860px]">
+        <div className="flex justify-end">
+          <button onClick={() => setStep("name")} className="min-h-11 px-2 text-sm font-medium">Skip</button>
+        </div>
+        <h1 className="mt-4 leading-[0.95] tracking-tight">
+          <span className="block text-[36px] font-extrabold uppercase text-transparent [-webkit-text-stroke:1.5px_#2E2260]">Put something</span>
+          <span className="block text-[48px] font-bold">on the line.</span>
+        </h1>
+        <p className="mt-4 max-w-[300px] text-base">Set a goal with friends. Your money is locked until the promise is kept.</p>
+        <div className="flex flex-1 items-center justify-center py-6">
+          <Icon3D name="padlock-key" size={220} glow />
+        </div>
+        <p className="mb-4 text-sm">Keep it and your money comes back. Miss it and {KEEPERS_PERCENT}% goes to the friends who kept theirs, {FEE_PERCENT}% to us.</p>
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={() => setStep("name")} className="btn btn-white min-h-14 gap-3 pl-6 pr-2 text-ink">
+            Get started <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mand"><ArrowRight className="h-5 w-5" aria-hidden /></span>
+          </button>
+          <Link href="/demo" className="flex min-h-11 items-center text-sm font-medium underline">See the demo</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (signIn) {
+    return (
+      <div className="enter flex flex-1 flex-col justify-center gap-5 px-6 pb-8 pt-6">
+        <div className="flex justify-center"><Icon3D name="friends" size={120} /></div>
+        <h1 className="text-[30px] font-medium leading-[1.1] tracking-tight">Sign in to start</h1>
+        <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+        <button type="button" onClick={signIn.onGoogle} className="btn btn-primary w-full">Continue with Google</button>
+        <button type="button" onClick={signIn.onEmail} className="btn btn-quiet w-full">Continue with email</button>
+        {signIn.error && <p role="alert" className="text-sm text-danger">{signIn.error}</p>}
+        <button type="button" onClick={() => setStep("hero")} className="min-h-11 text-sm text-muted">Back</button>
+      </div>
+    );
+  }
 
   return (
-    <div className="enter flex min-h-full flex-1 flex-col px-6 pb-8 pt-6">
-      <div className="flex items-center gap-3">
-        <div className="bar flex-1" role="progressbar" aria-label="Introduction progress" aria-valuemin={1} aria-valuemax={slides.length + 1} aria-valuenow={i + 1}>
-          <span style={{ width: `${((i + 1) / (slides.length + 1)) * 100}%` }} />
-        </div>
-        {!last && (
-          <button onClick={() => setI(slides.length)} className="min-h-11 px-2 text-sm text-muted">
-            Skip
-          </button>
-        )}
-      </div>
-
-      {!last ? (
-        <div key={i} className="enter flex flex-1 flex-col justify-center gap-6">
-          <p className="flex items-center gap-2 text-base font-semibold">
-            <LogoMark size={28} /> {PROJECT_NAME}
-          </p>
-          <div className="relative flex h-44 items-center justify-center rounded-[24px] bg-lilac" aria-hidden>
-            <Icon3D name={SLIDE_ICONS[i % SLIDE_ICONS.length]} size={160} className="float" />
-          </div>
-          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">{slides[i].title}</h1>
-          <p className="text-lg leading-relaxed text-muted">{slides[i].body}</p>
-          {i === 0 && <p className="text-sm text-muted">{TAGLINE}</p>}
-        </div>
-      ) : (
-        <form
-          className="enter flex flex-1 flex-col justify-center gap-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim()) onDone(name.trim());
-          }}
-        >
-          <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">What should your friends call you?</h1>
-          <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
-          <label className="block">
-            <span className="sr-only">First name</span>
-            <input
-              value={name}
-              maxLength={20}
-              autoComplete="given-name"
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your first name"
-              className="card w-full px-4 py-4 text-lg outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-deep"
-            />
-          </label>
-          <button type="submit" disabled={!name.trim()} className="btn btn-primary w-full py-4 text-lg">
-            Continue <ArrowRight className="h-5 w-5" aria-hidden />
-          </button>
-        </form>
-      )}
-
-      {!last && (
-        <button onClick={() => setI(i + 1)} className="btn btn-primary mt-6 w-full py-4 text-lg">
-          {i === 0 ? "Get started" : "Next"} <ArrowRight className="h-5 w-5" aria-hidden />
-        </button>
-      )}
-      {i === 0 && (
-        <Link href="/demo" className="mt-3 flex min-h-11 items-center justify-center text-sm font-medium text-deep underline">
-          See the whole story in 75 seconds
-        </Link>
-      )}
-    </div>
+    <form
+      className="enter flex flex-1 flex-col justify-center gap-5 px-6 pb-8 pt-6"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (name.trim()) onDone(name.trim());
+      }}
+    >
+      <div className="flex justify-center"><Icon3D name="friends" size={120} /></div>
+      <h1 className="text-[30px] font-medium leading-[1.1] tracking-tight">What should your friends call you?</h1>
+      <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+      <label className="block">
+        <span className="sr-only">First name</span>
+        <input value={name} maxLength={20} autoComplete="given-name" autoFocus onChange={(e) => setName(e.target.value)} placeholder="Your first name"
+          className="w-full rounded-2xl border-[1.5px] border-ink bg-white px-4 py-4 text-lg outline-none placeholder:text-muted/70" />
+      </label>
+      <button type="submit" disabled={!name.trim()} className="btn btn-primary w-full">
+        Continue <ArrowRight className="h-5 w-5" aria-hidden />
+      </button>
+      <button type="button" onClick={() => setStep("hero")} className="min-h-11 text-sm text-muted">Back</button>
+    </form>
   );
 }

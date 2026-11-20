@@ -28,7 +28,7 @@ export function StakePicker({ value, onChange, min, max, suggested, label = "How
         <button type="button" onClick={() => set(value - step)} disabled={value <= min} aria-label={`Lock ${usd(step)} less`} className="btn btn-quiet h-11 min-h-11 w-11 px-0">
           <Minus className="h-4 w-4" aria-hidden />
         </button>
-        <label className="flex min-w-0 flex-1 items-center justify-center gap-0.5 text-[34px] font-bold tracking-tight tabular-nums">
+        <label className="flex min-w-0 flex-1 items-center justify-center gap-0.5 text-[32px] font-medium tabular-nums">
           <span aria-hidden>$</span>
           <input
             inputMode="numeric"
@@ -48,7 +48,7 @@ export function StakePicker({ value, onChange, min, max, suggested, label = "How
         </button>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-        <button type="button" onClick={() => set(suggested)} aria-pressed={value === suggested} className="flex min-h-9 items-center gap-1.5 rounded-full bg-lilac-tint px-3 font-medium text-deep">
+        <button type="button" onClick={() => set(suggested)} aria-pressed={value === suggested} className="flex min-h-9 items-center gap-1.5 rounded-full bg-lilac-tint px-3 font-medium text-violet-deep">
           <Sparkles className="h-3.5 w-3.5" aria-hidden /> Grok suggests {usd(suggested)}
         </button>
         {max !== undefined && <span className="text-muted">You can lock up to {usd(max)} now</span>}

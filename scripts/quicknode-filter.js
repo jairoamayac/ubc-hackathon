@@ -5,7 +5,7 @@
 // Returns null when a batch has no dispute, so the webhook only fires for real events.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function main(stream) {
-  const PROGRAM = "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht";
+  const PROGRAM = "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1";
   const LINE = /^Program log: KEPT:DisputeOpened challenge=([1-9A-HJ-NP-Za-km-z]{32,44}) member=([1-9A-HJ-NP-Za-km-z]{32,44}) disputer=([1-9A-HJ-NP-Za-km-z]{32,44}) reason=(\d{1,3})(?: dispute=([1-9A-HJ-NP-Za-km-z]{32,44}))?$/;
   const disputes = [];
 

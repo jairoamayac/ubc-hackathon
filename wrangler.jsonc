@@ -2,6 +2,7 @@
   // House Money: Next.js static export + a small edge API (worker/index.ts) on one Cloudflare Worker.
   // Build first: `npm run build` (writes ./out), then `npx wrangler deploy`.
   // Secret: `npx wrangler secret put SPONSOR_KEY` (JSON array of the devnet sponsor keypair).
+  // Optional secret: `npx wrangler secret put QUICKNODE_URL` (private RPC, see docs/quicknode.md).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "house-money-ubc",
   "main": "worker/index.ts",

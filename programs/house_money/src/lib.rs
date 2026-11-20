@@ -14,8 +14,10 @@ use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Tran
 
 pub mod social;
 pub use social::*;
+pub mod kamino;
+pub use kamino::*;
 
-declare_id!("9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
+declare_id!("7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1");
 
 /// Pyth Solana Receiver program (owner of PriceUpdateV2 accounts).
 pub const PYTH_RECEIVER: Pubkey = pubkey!("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
@@ -46,6 +48,7 @@ pub mod house_money {
         c.bump = ctx.bumps.config;
         c.yield_vault_bump = ctx.bumps.yield_vault;
         c.house_vault_bump = ctx.bumps.house_vault;
+        c.kamino_reserve = Pubkey::default();
         Ok(())
     }
 
@@ -80,6 +83,8 @@ pub mod house_money {
         crew.last_accrual = now;
         crew.bump = ctx.bumps.crew;
         crew.vault_bump = ctx.bumps.crew_vault;
+        crew.kamino_principal = 0;
+        crew.kamino_ctokens = 0;
         init_member(&mut ctx.accounts.member, crew.key(), ctx.accounts.owner.key(), now, ctx.bumps.member);
         emit!(CrewCreated { crew: crew.key(), creator: crew.creator, name: crew.name.clone() });
         Ok(())
@@ -118,7 +123,7 @@ pub mod house_money {
             &ctx.accounts.token_program,
         )?;
         ctx.accounts.crew_vault.reload()?;
-        let shares = shares_for_assets(amount, ctx.accounts.crew.total_shares, ctx.accounts.crew_vault.amount, false)?;
+        let shares = shares_for_assets(amount, ctx.accounts.crew.total_shares, crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?, false)?;
         require!(shares > 0, HmError::ZeroAmount);
 
         token_interface::transfer_checked(
@@ -158,7 +163,7 @@ pub mod house_money {
             &ctx.accounts.token_program,
         )?;
         ctx.accounts.crew_vault.reload()?;
-        let amount = assets_for_shares(shares, ctx.accounts.crew.total_shares, ctx.accounts.crew_vault.amount)?;
+        let amount = assets_for_shares(shares, ctx.accounts.crew.total_shares, crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?)?;
         let m = &mut ctx.accounts.member;
         let principal_out = mul_div(m.principal as u128, shares as u128, m.shares as u128)?;
 
@@ -209,7 +214,7 @@ pub mod house_money {
         ctx.accounts.crew_vault.reload()?;
 
         // Invariant 1: only the yield (value above principal) can be staked.
-        let vault = ctx.accounts.crew_vault.amount;
+        let vault = crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?;
         let total = ctx.accounts.crew.total_shares;
         let value = assets_for_shares(ctx.accounts.member.shares, total, vault)?;
         let playable = value.saturating_sub(ctx.accounts.member.principal);
@@ -282,7 +287,7 @@ pub mod house_money {
 
         let mut minted = 0u64;
         if payout > 0 {
-            minted = shares_for_assets(payout, ctx.accounts.crew.total_shares, ctx.accounts.crew_vault.amount, false)?;
+            minted = shares_for_assets(payout, ctx.accounts.crew.total_shares, crew_assets(&ctx.accounts.crew, ctx.accounts.crew_vault.amount)?, false)?;
             let bump = [cfg.bump];
             let seeds: &[&[u8]] = &[b"config", &bump];
             token_interface::transfer_checked(
@@ -353,6 +358,11 @@ pub mod house_money {
         social::vote_entry_handler(ctx, passed)
     }
 
+    /// After the voting window, settles an undecided entry (plurality of votes; tie or none = refund).
+    pub fn finalize_entry(ctx: Context<FinalizeEntry>) -> Result<()> {
+        social::finalize_entry_handler(ctx)
+    }
+
     pub fn claim_challenge(ctx: Context<ClaimChallenge>) -> Result<()> {
         social::claim_challenge_handler(ctx)
     }
@@ -363,6 +373,23 @@ pub mod house_money {
     }
 
     /// Moves the platform's 5% of the forfeits to the treasury, once per commitment. Anyone can call it.
+    // ------------------------------------------------------------ real yield (see kamino.rs)
+
+    /// Admin picks the Kamino reserve crews supply to. Never touches funds.
+    pub fn set_kamino_reserve(ctx: Context<SetKaminoReserve>) -> Result<()> {
+        kamino::set_kamino_reserve_handler(ctx)
+    }
+
+    /// Supply `amount` of a crew's idle dollars to Kamino Lend. Permissionless crank.
+    pub fn kamino_supply(ctx: Context<KaminoMove>, amount: u64) -> Result<()> {
+        kamino::kamino_supply_handler(ctx, amount)
+    }
+
+    /// Redeem all of a crew's Kamino cTokens back to its vault, with the interest earned.
+    pub fn kamino_redeem(ctx: Context<KaminoMove>) -> Result<()> {
+        kamino::kamino_redeem_handler(ctx)
+    }
+
     pub fn take_fee(ctx: Context<TakeFee>) -> Result<()> {
         social::take_fee_handler(ctx)
     }
@@ -546,6 +573,8 @@ pub struct Config {
     pub bump: u8,
     pub yield_vault_bump: u8,
     pub house_vault_bump: u8,
+    /// Kamino Lend reserve crews supply to (default = none).
+    pub kamino_reserve: Pubkey,
 }
 
 #[account]
@@ -565,6 +594,10 @@ pub struct Crew {
     pub last_accrual: i64,
     pub bump: u8,
     pub vault_bump: u8,
+    /// Dollars supplied to Kamino and not yet redeemed (at cost).
+    pub kamino_principal: u64,
+    /// Kamino cTokens held by the crew PDA.
+    pub kamino_ctokens: u64,
 }
 
 #[account]
@@ -816,12 +849,21 @@ pub enum HmError {
     SubjectCantVote,
     #[msg("Not decided yet.")]
     NotDecided,
+    #[msg("Voting for this commitment has closed")]
+    VotingClosed,
+    #[msg("Only the operator can move a pot's money into Kamino")]
+    NotOperator,
+    #[msg("The Kamino reserve is already set")]
+    KaminoReserveSet,
     #[msg("Already claimed.")]
     AlreadyClaimed,
     #[msg("Only people who put money in can verify.")]
     NotAParticipant,
     #[msg("Stake below this commitment's minimum.")]
     StakeTooLow,
+    #[msg("Bring the pot back from Kamino first (kamino_redeem in the same transaction)")]
+    KaminoNotRedeemed,
+    // Appended last: error codes of the existing variants must not shift.
     #[msg("Unknown dispute reason.")]
     BadReason,
 }

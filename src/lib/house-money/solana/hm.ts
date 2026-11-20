@@ -4,14 +4,17 @@ import { ComputeBudgetProgram, PublicKey, SystemProgram, TransactionInstruction,
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Buffer } from "buffer";
 
-export const PROGRAM_ID = new PublicKey("9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
+export const PROGRAM_ID = new PublicKey((typeof process !== "undefined" && process.env?.HM_PROGRAM_ID) || "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1");
 /** Pyth SOL/USD PriceUpdateV2 account (sponsored feed, Solana devnet). */
 export const SOL_USD_FEED = new PublicKey("7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE");
 export const DECIMALS = 6;
 /** Priority fee so transactions land when devnet is busy (paid by the sponsor). */
-export const priorityIxs = () => [
-  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }),
-  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }),
+/** Default priority fee (µlamports per compute unit) and the most the sponsor Worker will co-sign. */
+export const BASE_CU_PRICE = 200_000;
+export const MAX_CU_PRICE = 1_000_000;
+export const priorityIxs = (units = 120_000, microLamports = BASE_CU_PRICE) => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Math.min(Math.max(Math.round(microLamports), BASE_CU_PRICE), MAX_CU_PRICE) }),
 ];
 
 const IX = {
@@ -84,6 +87,8 @@ export interface ConfigArgs {
 }
 export interface ConfigAccount extends ConfigArgs { admin: PublicKey; mint: PublicKey; priceFeed: PublicKey }
 export interface CrewAccount {
+  /** Dollars this pot has supplied to Kamino Lend and not yet redeemed (part of its assets). */
+  kaminoPrincipal: bigint;
   address: PublicKey; creator: PublicKey; crewId: bigint; name: string; emoji: string;
   totalShares: bigint; totalPrincipal: bigint; yieldPaid: bigint; members: number; createdAt: number; lastAccrual: number;
 }
@@ -110,6 +115,7 @@ export function decodeCrew(address: PublicKey, d: Uint8Array): CrewAccount {
   return {
     address, creator: r.pk(), crewId: r.u64(), name: r.str(), emoji: r.str(), totalShares: r.u64(), totalPrincipal: r.u64(),
     yieldPaid: r.u64(), members: r.u32(), createdAt: Number(r.i64()), lastAccrual: Number(r.i64()),
+    ...(() => { r.u8(); r.u8(); return { kaminoPrincipal: r.u64() }; })(),
   };
 }
 export function decodeMember(address: PublicKey, d: Uint8Array): MemberAccount {
@@ -223,13 +229,15 @@ export function discFilter(disc: readonly number[], bs58encode: (b: Uint8Array) 
 /** Confirms by polling (no websockets: works in Workers, browsers and behind proxies). */
 export async function confirm(conn: Connection, signature: string, lastValidBlockHeight: number, timeoutMs = 60_000) {
   const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+  // Gentle polling: the public RPC rate-limits, so wait a little longer each round and only check the
+  // block height every few rounds.
+  for (let round = 0; Date.now() - start < timeoutMs; round++) {
     const { value } = await conn.getSignatureStatuses([signature]);
     const st = value[0];
     if (st?.err) throw new Error(`Could not save that, try again. (${JSON.stringify(st.err)})`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
-    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
-    await new Promise((r) => setTimeout(r, 800));
+    if (round % 4 === 3 && (await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
+    await new Promise((r) => setTimeout(r, Math.min(2500, 900 + round * 250)));
   }
   throw new Error("This is taking longer than usual, try again.");
 }
@@ -246,6 +254,7 @@ const SOCIAL_IX = {
   join_challenge: [41, 104, 214, 73, 32, 168, 76, 79],
   vote_entry: [153, 149, 139, 2, 39, 46, 186, 44],
   claim_challenge: [132, 167, 9, 45, 203, 244, 30, 171],
+  finalize_entry: [74, 183, 224, 180, 84, 147, 96, 134],
   join_with_goal: [164, 7, 145, 205, 198, 59, 220, 112],
   take_fee: [78, 179, 29, 200, 7, 172, 106, 91],
   open_dispute: [137, 25, 99, 119, 23, 223, 161, 42],
@@ -269,7 +278,7 @@ export const SOCIAL_PAYER_IXS = [
 ].map((d) => d.join(","));
 
 export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
-export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2 } as const;
+export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2, REFUNDED: 3 } as const;
 export const NOBODY = PublicKey.default;
 
 export const profilePda = (owner: PublicKey) => pda([enc("profile"), owner.toBytes()]);
@@ -284,7 +293,9 @@ export const feePda = (challenge: PublicKey) => pda([enc("fee"), challenge.toByt
 /** Platform share of forfeits (mirrors social::PLATFORM_FEE_BPS). */
 export const PLATFORM_FEE_BPS = 500n;
 export function platformFee(passed: bigint, failed: bigint) {
-  return passed === 0n ? 0n : (failed * PLATFORM_FEE_BPS) / 10_000n;
+  if (passed === 0n) return 0n;
+  const fee = (failed * PLATFORM_FEE_BPS) / 10_000n;
+  return fee < failed ? fee : failed;
 }
 /** Mirrors social::commitment_payout: stake + pro-rata share of 95% of the forfeits. */
 export function commitmentPayout(own: bigint, passed: bigint, failed: bigint) {
@@ -391,6 +402,12 @@ export function claimChallengeIx(owner: PublicKey, crew: PublicKey, challenge: P
     new W().bytes(SOCIAL_IX.claim_challenge).done());
 }
 
+/** After the voting window (social::VOTE_WINDOW_SECS), settles an entry nobody decided: plurality, or a refund. */
+export const VOTE_WINDOW_SECS = 120;
+export function finalizeEntryIx(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey) {
+  return ix([m(crew), m(challenge, true), m(entryPda(challenge, entryOwner), true)], new W().bytes(SOCIAL_IX.finalize_entry).done());
+}
+
 export function joinWithGoalIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey, goal: string, stake: bigint) {
   const entry = entryPda(challenge, owner);
   return ix([m(payer, true, true), m(owner, false, true), m(crew), m(crewVaultPda(crew)), m(memberPda(crew, owner), true),
@@ -424,4 +441,63 @@ export function decodeDispute(address: PublicKey, d: Uint8Array): DisputeAccount
   if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Dispute)) throw new Error("not a Dispute account");
   const r = new R(d);
   return { address, challenge: r.pk(), entry: r.pk(), member: r.pk(), opener: r.pk(), reason: r.u8(), openedAt: r.i64() };
+}
+
+// ---------------------------------------------------------------- real yield: Kamino Lend (klend)
+export const KLEND_PROGRAM_ID = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
+const SYSVAR_INSTRUCTIONS = new PublicKey("Sysvar1nstructions1111111111111111111111111");
+const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const KIX = {
+  set_kamino_reserve: [175, 135, 28, 43, 142, 0, 170, 196],
+  kamino_supply: [145, 46, 142, 2, 176, 57, 162, 159],
+  kamino_redeem: [143, 225, 240, 130, 123, 5, 160, 84],
+  refresh_reserve: [2, 218, 138, 235, 79, 201, 25, 102],
+};
+const kpda = (seed: string, key: PublicKey) => PublicKey.findProgramAddressSync([enc(seed), key.toBytes()], KLEND_PROGRAM_ID)[0];
+export interface KaminoReserve { reserve: PublicKey; market: PublicKey; pythOracle: PublicKey }
+export const kaminoAccounts = (k: KaminoReserve) => ({
+  lma: kpda("lma", k.market),
+  liqSupply: kpda("reserve_liq_supply", k.reserve),
+  collMint: kpda("reserve_coll_mint", k.reserve),
+});
+/** Kamino needs the reserve refreshed (fresh Pyth price, accrued interest) earlier in the same transaction. */
+export function refreshReserveIx(k: KaminoReserve) {
+  return new TransactionInstruction({
+    programId: KLEND_PROGRAM_ID,
+    keys: [m(k.reserve, true), m(k.market), m(k.pythOracle), m(KLEND_PROGRAM_ID), m(KLEND_PROGRAM_ID), m(KLEND_PROGRAM_ID)],
+    data: Buffer.from(KIX.refresh_reserve),
+  });
+}
+export function setKaminoReserveIx(admin: PublicKey, reserve: PublicKey) {
+  return ix([m(admin, false, true), m(configPda(), true), m(reserve)], Buffer.from(KIX.set_kamino_reserve));
+}
+function kaminoMoveKeys(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve) {
+  const a = kaminoAccounts(k);
+  return [m(payer, true, true), m(configPda()), m(mint), m(crew, true), m(crewVaultPda(crew), true), m(k.reserve, true), m(k.market),
+    m(a.lma), m(a.liqSupply, true), m(a.collMint, true), m(getAssociatedTokenAddressSync(a.collMint, crew, true), true),
+    m(TOKEN_PROGRAM_ID), m(TOKEN_PROGRAM_ID), m(ASSOCIATED_TOKEN_PROGRAM), m(SystemProgram.programId), m(SYSVAR_INSTRUCTIONS),
+    m(KLEND_PROGRAM_ID)];
+}
+/** `amount` 0 supplies the whole vault. Operator only. */
+export function kaminoSupplyIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve, amount: bigint) {
+  return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_supply).u64(amount).done());
+}
+/** Permissionless: any signer can bring a pot back from Kamino into its own vault. */
+export function kaminoRedeemIx(payer: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve) {
+  return ix(kaminoMoveKeys(payer, mint, crew, k), new W().bytes(KIX.kamino_redeem).done());
+}
+/**
+ * Wraps instructions that price a pot's shares (deposit, withdraw, joining a goal, the fee): the program
+ * refuses to price while money sits in Kamino, so the pot comes back first (principal plus interest, so the
+ * price is exact), the action runs, and then the whole vault goes back to work. Redeem and supply are no-ops
+ * when there is nothing to move. Supply must be signed by the operator (config admin).
+ */
+export function withKamino(operator: PublicKey, mint: PublicKey, crew: PublicKey, k: KaminoReserve, action: TransactionInstruction[]) {
+  return [refreshReserveIx(k), kaminoRedeemIx(operator, mint, crew, k), ...action, refreshReserveIx(k), kaminoSupplyIx(operator, mint, crew, k, 0n)];
+}
+/** Kamino fields that follow `vault_bump` in a Crew account (Borsh: right after the variable-length strings). */
+export function decodeCrewKamino(d: Uint8Array) {
+  const r = new R(d);
+  r.pk(); r.u64(); r.str(); r.str(); r.u64(); r.u64(); r.u64(); r.u32(); r.i64(); r.i64(); r.u8(); r.u8();
+  return { principal: r.u64(), ctokens: r.u64() };
 }

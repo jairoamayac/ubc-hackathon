@@ -30,20 +30,22 @@ No wallet, no seed phrase, no fees: the app covers them.
 | | |
 |---|---|
 | Built and live on devnet | Groups with invite links and names; Apple Pay top-up (simulated); pacts where each person locks money on their own goal; only people who put money in confirm, never themselves, by strict majority; 95% of what's left behind to those who kept their word, 5% to the platform, taken once; automatic payouts; sponsored fees |
-| Not built yet | Appeal with proof reviewed by AI; a default outcome if nobody confirms; email login (Privy); automatic proof (Strava, Screen Time, Apple Health); real Apple Pay through an on-ramp |
+| Not built yet | Appeal with proof reviewed by AI; a default outcome if nobody confirms; automatic proof (Strava, Screen Time, Apple Health); real Apple Pay through an on-ramp |
 
 ## How it uses Solana
 
 | What | Address |
 |---|---|
-| Program (Anchor 1.2) | [`9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht`](https://explorer.solana.com/address/9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht?cluster=devnet) |
+| Program (Anchor 1.2, with Kamino yield) | [`7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1`](https://explorer.solana.com/address/7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1?cluster=devnet) |
+| Kamino Lend market / hmUSD reserve (devnet) | `G5m4WrATTWncPShWDRkagCM934FYezTRYd2C69sTWkJQ` / `JBiEdktmtJsrrzhmHsfFSZqt2x6SLBjTwm9grDmupGZ6` |
+| Earlier program (first live demo) | `9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht` |
 | Test dollar (SPL token, 6 decimals) | [`FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn`](https://explorer.solana.com/address/FBQJKyDd5vSekrT4jVMVZRiXsrfCTW6nNBf5x5siKPWn?cluster=devnet) |
 | Fee sponsor | `HAEaSXy5L6fQinymFH3JZZvCgwGmVVNCbWUrMH9bd9zY` |
 
 - **Money is held by the program, not by us.** Each group has a vault owned by a program address; people hold shares of it. Every transfer is signed by the program; nobody can move someone else's money.
 - **Pacts are accounts.** A pact stores the deadline and minimum; each person's stake and goal are their own accounts; one vote per person is enforced by a vote account.
 - **Payouts are code.** Strict majority of the other participants decides; the 5% moves once to a treasury; winners collect stake plus a pro-rata share of the rest; if nobody kept their word, everyone is refunded.
-- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. The app creates the user's key on the device.
+- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. People sign in with Google or email through Privy, which creates their account (see [`docs/privy-setup.md`](docs/privy-setup.md)); without a Privy app id the app falls back to a demo key on the device.
 
 Code: `programs/house_money/src` (on-chain program; the folder keeps its original name because the deployed program ID depends on it), `src/lib/house-money/solana` (client), `src/components` (screens), `worker/index.ts` (fee sponsor).
 
@@ -51,11 +53,11 @@ Code: `programs/house_money/src` (on-chain program; the folder keeps its origina
 
 | Check | Result |
 |---|---|
-| `scripts/kept-e2e.mts` on devnet | 9/9: own goal and stake, minimum enforced, only participants confirm, nobody confirms themselves, platform gets exactly 5% once, winners split 95% (Maria $20 → $32.67), no double claim, everyone can withdraw |
-| `scripts/e2e.mts` on devnet | 15/15: group pots, shares, deposits and withdrawals |
-| `scripts/social-e2e.mts` on devnet | 14/14 (also covers yes/no bets, still in the program but not in the app) |
-| `scripts/worker-security.mts` on the live API | 14/14 attacks rejected |
-| `cargo test` | 9 unit tests |
+| `scripts/kept-e2e.mts` on devnet (via QuickNode) | 10/10: own goal and stake, minimum enforced, only participants confirm, nobody confirms themselves, platform gets exactly 5% once, winners split 95% (Maria $20 → $32.67), no double claim, everyone can withdraw, refund when nobody votes |
+| `scripts/kamino-e2e.mts` on devnet (via QuickNode) | 7/7: the pot is lent on Kamino Lend, shares are only priced with the pot home, a late joiner pays the exact price, any member can bring the pot home, real interest paid out |
+| `scripts/app-e2e.mts` on devnet (via QuickNode) | 6/6: three people with no SOL run a whole pact through the app's own client and the Worker |
+| `scripts/worker-security.mts` | 22/22 attacks rejected (sponsor co-signing, top-ups, the RPC proxy) |
+| `cargo test` | 12 unit tests |
 | Solana MCP `program_autofixer` | 0 issues |
 
 ### Grok Bot's role: a Kleros-style appeals court
@@ -66,19 +68,40 @@ The same Grok Bot routine also coaches users into measurable goals with a stake 
 
 On-chain side: `open_dispute(reason)` (a participant of a finished pact, once per entry, before the entry is collected) writes a `Dispute` account and logs `KEPT:DisputeOpened challenge=… member=… disputer=… reason=… dispute=…` plus a `DisputeOpened` event. A QuickNode Stream (Solana devnet, filter in `scripts/quicknode-filter.js`) POSTs it, HMAC-signed, to `POST /api/streams/quicknode`; the Worker stores it in KV, attaches it to the app's appeal (or starts the judge itself) and serves it at `GET /api/disputes?challenge=<pact>`. The dispute is advisory: it moves no money and does not block settlement. Setup and tests: [`docs/quicknode-stream.md`](docs/quicknode-stream.md).
 
-Wiring (Worker only, no keys in the repo): `POST /api/appeal` stores the dispute in KV and calls the webhook, `POST /api/grok/callback` receives the verdict with a one-time token, `GET /api/disputes/:id` is what the app polls. The same webhook also serves the `verify` role: `POST /api/verify` and `GET /api/verifications/:id` power "Verify with Grok", where Grok reads a public X follower count itself. Setup: `npx wrangler secret put GROK_WEBHOOK_URL` and `npx wrangler secret put GROK_WEBHOOK_KEY`; the `DISPUTES` KV namespace is created on first deploy. The "Instant demo judge" in the appeal sheet is an offline fallback, clearly labelled.
+Wiring (Worker only, no keys in the repo): `POST /api/appeal` stores the dispute in KV and calls the webhook, `POST /api/grok/callback` receives the verdict with a one-time token, `GET /api/disputes/:id` is what the app polls. The same webhook also serves the `verify` role: `POST /api/verify` and `GET /api/verifications/:id` power "Verify with Grok", where Grok reads a public X follower count itself. The `coach` role (`POST /api/coach`, shown as a suggestion card next to the instant coach) and the `group` role (`POST /api/group/ask`, the "Grok check-in" card in a group) use the same flow and `GET /api/jobs/:id`. Setup: `npx wrangler secret put GROK_WEBHOOK_URL` and `npx wrangler secret put GROK_WEBHOOK_KEY`; the `DISPUTES` KV namespace is created on first deploy. The "Instant demo judge" in the appeal sheet is an offline fallback, clearly labelled.
 
 ## Run it
 
+Everything runs from a clean clone with no secrets in the repo. Keys are generated into `keys/` and
+`.dev.vars`, both git-ignored. Needs Node 20+, Rust and the Agave CLI (`solana`, `cargo build-sbf`).
+
+**1. Local, everything real (validator + the real Kamino program cloned from mainnet):**
+
 ```bash
 npm install
-cargo build-sbf --manifest-path programs/house_money/Cargo.toml     # needs the Agave CLI
-RPC_URL=http://127.0.0.1:8899 node scripts/e2e.mts                    # mint + config on solana-test-validator
-RPC_URL=http://127.0.0.1:8899 node scripts/kept-e2e.mts
-npm run build && npx wrangler deploy                                  # app + fee sponsor
+scripts/kamino-local.sh                                   # builds the program, starts a validator on :8999
+KLEND_SDK=/path/to/klend-sdk scripts/kamino-local-market.sh   # Kamino market, reserves, a real borrower
+RPC_URL=http://127.0.0.1:8999 KAMINO_FILE=kamino-local.json NEED_INTEREST=0 npx jiti scripts/kamino-e2e.mts
+npm run build && scripts/worker-local.sh                   # app + API on http://localhost:8788
+APP_URL=http://localhost:8788 npx jiti scripts/app-e2e.mts # three friends, a whole pact, through the app
+API=http://localhost:8788 npx jiti scripts/worker-security.mts
 ```
 
-Keys live in `keys/` (git-ignored). The Worker needs `SPONSOR_KEY` as a secret: `npx wrangler secret put SPONSOR_KEY`.
+`klend-sdk` is [Kamino-Finance/klend-sdk](https://github.com/Kamino-Finance/klend-sdk), cloned with its dependencies installed.
+
+**2. Devnet:** the program is deployed at the address in `programs/house_money/src/lib.rs`. Its config,
+mint and Kamino market are run by the team's sponsor key, so to operate your own copy deploy the program
+under your own ID (`declare_id!` + `HM_PROGRAM_ID`) and run `scripts/e2e.mts` to create mint and config.
+
+**Configuration** (see [`.dev.vars.example`](.dev.vars.example)):
+
+| Name | Where | What |
+|---|---|---|
+| `SPONSOR_KEY` | Worker secret / `.dev.vars` | sponsor keypair that pays fees |
+| `QUICKNODE_URL` | Worker secret / `.dev.vars` | optional private RPC, see [docs/quicknode.md](docs/quicknode.md) |
+| `RPC_URL`, `MINT`, `KAMINO_*` | `wrangler.jsonc` vars | cluster, test dollar, Kamino market (public values) |
+
+Deploy: `npm run build && npx wrangler deploy`, after `npx wrangler secret put SPONSOR_KEY` (and `QUICKNODE_URL`).
 
 ## Honest limits
 
