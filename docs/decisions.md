@@ -45,3 +45,10 @@ Crews can't be deleted on-chain and the team rule is not to delete anything. Dup
 
 ### D12. Program upgrade in place (20 Nov)
 The social layer grew the binary from 377 KB to 565 KB. The program account was extended and upgraded at the same address, so existing crews and savings kept working (the 15 original e2e checks pass after the upgrade).
+
+### D13. The idea: Burn the Boats (team decision, 19 Nov)
+The team chose commitment with money on the line: each person stakes on their own goal, friends verify, whoever fails loses the stake; 40% of forfeits to the platform and 60% to the friends who did it; appeals with proof reviewed by AI and recorded on-chain. Framing: a commitment to yourself, not a bet.
+*Consequences:* yes/no bets on other people (D9) leave the product and the pitch; they stay in the program but the app hides them. The commitment ("challenge") code becomes the core and needs the changes listed in `architecture-v2.md` §5: personal goal and stake per person, participants-only voting, the 40/60 split, and the appeal flow.
+
+### D14. Crypto stays invisible (hackathon guide, Consumer track)
+The guide asks for consumer apps "where the crypto is invisible": no bridging, gas or seed phrases. User-facing copy talks about dollars, goals and friends; Solana details (program ID, how the chain is used) live in the README's technical section, which the Best use of Solana award requires.
