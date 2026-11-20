@@ -24,7 +24,7 @@ the stake in your own friend group and the custody in code. More in [`docs/conte
 ## How it works
 
 1. **Sign in with your email** (Privy creates your account; no wallet, no seed phrase).
-2. **Add money** with Apple Pay (simulated on devnet; Crossmint on-ramp planned).
+2. **Add money** with Apple Pay or a card through **Crossmint** (staging; simulated test dollars when the Crossmint key is not set).
 3. **Make a promise**: your own goal, your own stake, a deadline. Friends join the pact with theirs.
 4. **While it runs**, the group's pot is lent on **Kamino Lend** and earns interest; the group screen shows *Earning on Kamino* with what it has earned so far.
 5. **When time is up**, each participant votes on the others: *Kept it* or *Didn't*. A strict majority of the
@@ -44,8 +44,8 @@ No fees, ever: the app pays every network fee.
 | **QuickNode** | Private RPC behind the Worker; pre-sign simulation; Streams for disputes | Live (RPC and Stream) |
 | **Privy** | Email sign-in, embedded Solana account that signs | Live |
 | **Cloudflare Workers** | Fee sponsor, RPC proxy, Grok routes, rate limits | Live |
-| **Grok Bot** | Goal coach, "Verify with Grok", group check-in, appeals council | Built; needs its keys |
-| **Crossmint** | Real Apple Pay → USDC | Planned ([plan](docs/apple-pay-plan.md)) |
+| **Grok Bot** | Goal coach, "Verify with Grok", group check-in, appeals council | Live |
+| **Crossmint** | Apple Pay or card → dollars in the app | Built, staging, on behind a flag ([setup](docs/ONRAMP.md)) |
 
 Details, what's missing and the secrets each one needs: [`docs/integrations.md`](docs/integrations.md).
 
@@ -143,7 +143,7 @@ Deploy: `npm run build && npx wrangler deploy`.
 
 ## Honest limits
 
-- Devnet with test dollars. Apple Pay is simulated until the Crossmint on-ramp lands.
+- Devnet with test dollars. Crossmint runs in staging (no real card is charged); without its server key, Add funds uses simulated Apple Pay.
 - Friends can collude, and anyone with an invite link can join a group: enough fake members could form a
   majority. Invite-only groups are the next program change ([audit](docs/audit-2026-11-20.md)).
 - On devnet, pots are lent on the team's own Kamino market; mainnet would use Kamino's main market.
