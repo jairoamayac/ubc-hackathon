@@ -229,12 +229,12 @@ export async function confirm(conn: Connection, signature: string, lastValidBloc
   while (Date.now() - start < timeoutMs) {
     const { value } = await conn.getSignatureStatuses([signature]);
     const st = value[0];
-    if (st?.err) throw new Error(`Transaction failed: ${JSON.stringify(st.err)}`);
+    if (st?.err) throw new Error(`Could not save that, try again. (${JSON.stringify(st.err)})`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
-    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("Transaction expired, try again.");
+    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
     await new Promise((r) => setTimeout(r, 800));
   }
-  throw new Error("Network is slow, try again.");
+  throw new Error("This is taking longer than usual, try again.");
 }
 
 // ================================================================ social layer (programs/house_money/src/social.rs)

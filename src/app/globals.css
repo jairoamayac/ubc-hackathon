@@ -5,6 +5,10 @@
    Locked / Kept / verified, soft tinted shadows. Legacy token names (mint, ember, sun) map onto it so the
    offline demo picks up the same look. */
 @theme {
+  --color-deep: #2e2260;       /* text on lilac, progress */
+  --color-mandarina: #ff7a3d;  /* primary CTA + celebration */
+  --color-mandarina-edge: #d9551c;
+  --color-locked: #ddefe5;
   --color-paper: #fafaf7;
   --color-card: #ffffff;
   --color-ink: #1a1a18;
@@ -300,4 +304,110 @@ body {
   .lock-pop { animation: none; }
 }
 
+}
+
+/* From Josué's /demo restyle (feat/kept-ui-lila). */
+@layer components {
+.surface-lilac {
+  background: var(--color-lilac);
+  color: var(--color-deep);
+  border-radius: 24px;
+  box-shadow: var(--shadow-lilac);
+  position: relative;
+  overflow: hidden;
+}
+.surface-ink {
+  background: var(--color-ink);
+  color: #fff;
+  border-radius: 24px;
+  box-shadow: 0 12px 28px rgba(26, 26, 24, 0.22);
+  position: relative;
+  overflow: hidden;
+}
+.surface-mandarina {
+  background: var(--color-mandarina);
+  color: var(--color-ink);
+  border-radius: 24px;
+  box-shadow: 0 18px 36px rgba(217, 85, 28, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+.pastel {
+  border-radius: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.btn-approve {
+  background: var(--color-forest);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(31, 95, 74, 0.25);
+}
+.btn-sm {
+  min-height: 44px;
+  border-radius: 9999px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+.iconbtn {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+.cat {
+  border-radius: 18px;
+  border: 2px solid transparent;
+  transition: border-color 120ms ease;
+}
+.cat[aria-pressed="true"] {
+  border-color: var(--color-ink);
+}
+.steps {
+  display: flex;
+  gap: 6px;
+}
+.steps > i {
+  flex: 1;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-stone);
+}
+.steps > i[data-on="true"] {
+  background: var(--color-deep);
+}
+.big {
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.outline-title {
+  color: transparent;
+  -webkit-text-stroke: 2px var(--color-deep);
+}
+.float {
+  animation: float 4.5s ease-in-out infinite;
+}
+.float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+  .float-slow {
+    animation: none;
+  }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .float,
+  .float-slow {
+    animation: none;
+  }
 }

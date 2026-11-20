@@ -1,56 +1,93 @@
 "use client";
 
 // Demo screens, part 1: login, home, new goal wizard, group.
-import { Check, Link2, Loader2, Plus, Sparkles } from "lucide-react";
-import { useMemo, useState, type Dispatch } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, ChevronRight, Dumbbell, Link2, Loader2, Lock, Plus, Repeat, Sparkles, X } from "lucide-react";
+import { useState, type Dispatch, type ReactNode } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_SUGGESTED_MIN, STAKE_WARN_MULTIPLE, TAGLINE } from "@/lib/brand";
 import { coachGoal, type Coaching } from "@/lib/coach";
-import { GROUP_NAME, onTheLine, pot, yieldFor, type Action, type DemoState } from "@/lib/demo/store";
+import { GROUP_NAME, onTheLine, pot, type Action, type DemoState } from "@/lib/demo/store";
 import { StakePicker } from "../StakePicker";
 import { usd } from "@/lib/format";
-import { Avatar, Back, DemoBadge, LockAnimation, ScreenBody, StatusChip, UrgencyBanner, timeLeft } from "./parts";
+import { Avatar, DemoBadge, Icon3D, LockAnimation, LockedPill, PASTEL, ScreenBody, StatusChip, TopBar, UrgencyBanner, Wordmark, timeLeft } from "./parts";
 
 export type Route = "login" | "home" | "new" | "group" | "goal" | "feed" | "vote" | "dispute" | "results" | "me";
 export type ScreenProps = { s: DemoState; d: Dispatch<Action>; go: (r: Route) => void };
 
 // -------------------------------------------------------------------- 1 login
 export function LoginScreen({ d, go }: Pick<ScreenProps, "d" | "go">) {
+  const [step, setStep] = useState<"hero" | "email">("hero");
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
-  const submit = () => {
-    if (!email.includes("@") || sending) return;
+  const submit = (value = email) => {
+    if (!value.includes("@") || sending) return;
     setSending(true);
     setTimeout(() => {
-      d({ type: "signIn", email });
+      d({ type: "signIn", email: value });
       go("home");
     }, 900);
   };
   return (
-    <ScreenBody>
-      <div className="mt-16 flex flex-col gap-3">
-        <span className="flex items-center gap-2 text-lg font-medium tracking-tight"><span className="dot" aria-hidden /> {PROJECT_NAME}</span>
-        <h1 className="text-[40px] font-medium leading-[1.05] tracking-tight">Put something on the line.</h1>
-        <p className="text-muted">{TAGLINE} Lock money on your goal. Your friends are the witnesses.</p>
+    <div className="enter relative flex flex-1 flex-col overflow-hidden bg-lilac px-6 pb-6 pt-6 text-deep">
+      <span aria-hidden className="absolute -right-24 -top-28 h-72 w-72 rounded-full bg-white/20" />
+      <span aria-hidden className="absolute -left-28 top-[58%] h-64 w-64 rounded-full bg-white/15" />
+      <header className="relative flex items-center justify-between">
+        {step === "email" ? (
+          <button onClick={() => setStep("hero")} aria-label="Back" className="iconbtn"><ArrowLeft className="h-5 w-5" aria-hidden /></button>
+        ) : (
+          <Wordmark />
+        )}
+        <button onClick={() => { setEmail("martin@example.com"); submit("martin@example.com"); }} className="min-h-11 px-1 text-[17px] font-semibold">Skip</button>
+      </header>
+      <div className="relative mt-8">
+        <h1 className="leading-[0.95] tracking-tight">
+          <span className="outline-title block whitespace-nowrap text-[39px] font-extrabold uppercase tracking-[-0.03em]">Put something</span>
+          <span className="block text-[52px] font-bold">on the line.</span>
+        </h1>
+        <p className="mt-4 max-w-[330px] text-[17px] leading-snug">{TAGLINE} Set a goal with friends. Your money is locked until the promise is kept.</p>
       </div>
-      <form className="mt-8 space-y-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-        <label className="block">
-          <span className="mb-2 block text-sm text-muted">Your email</span>
-          <input
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="martin@example.com"
-            className="card w-full px-4 py-3 text-lg outline-none placeholder:text-muted/70 focus:border-forest"
-          />
-        </label>
-        <button type="submit" disabled={!email.includes("@") || sending} className="btn btn-primary w-full py-4 text-lg">
-          {sending ? <><Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Sending your link</> : "Continue with email"}
-        </button>
-        <p className="text-sm text-muted">No password to remember. <DemoBadge>Demo</DemoBadge> No email is sent.</p>
-      </form>
-      <button type="button" onClick={() => { setEmail("martin@example.com"); }} className="mt-2 min-h-11 self-start text-sm text-forest underline">Use the demo email</button>
-    </ScreenBody>
+
+      {step === "hero" ? (
+        <>
+          <div className="relative mx-auto mt-2 h-[340px] w-full max-w-[360px] flex-1" aria-hidden>
+            <span className="absolute left-1/2 top-1/2 h-60 w-60 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/25 blur-2xl" />
+            <Icon3D name="calendar" size={92} className="float-slow absolute left-0 top-6" />
+            <Icon3D name="chat-check" size={100} className="float absolute right-0 top-2" />
+            <Icon3D name="padlock-key" size={250} className="float absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <Icon3D name="friends" size={96} className="float absolute bottom-6 left-3" />
+            <Icon3D name="coins-stack" size={104} className="float-slow absolute bottom-10 right-0" />
+            <span className="absolute left-[64%] top-4 h-5 w-5 rounded-full bg-white/80" />
+            <span className="absolute bottom-4 left-[40%] h-6 w-6 rounded-full bg-mandarina" />
+          </div>
+          <div className="relative mt-auto flex items-center justify-between gap-3">
+            <button onClick={() => setStep("email")} className="btn btn-white min-h-[64px] gap-4 pl-7 pr-3 text-[18px]">
+              Get started <span className="flex h-10 w-10 items-center justify-center rounded-full bg-mandarina text-ink"><ArrowRight className="h-5 w-5" aria-hidden /></span>
+            </button>
+            <button onClick={() => setStep("email")} className="min-h-11 text-[16px] font-medium underline underline-offset-4">I have an account</button>
+          </div>
+        </>
+      ) : (
+        <form className="relative mt-8 space-y-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+          <div className="flex justify-center" aria-hidden><Icon3D name="padlock-key" size={150} className="float" /></div>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium">Your email</span>
+            <input
+              type="email"
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="martin@example.com"
+              className="h-14 w-full rounded-2xl bg-white px-4 text-lg text-ink shadow-[0_10px_24px_rgba(46,34,96,0.16)] outline-none placeholder:text-muted/70"
+            />
+          </label>
+          <button type="submit" disabled={!email.includes("@") || sending} className="btn btn-primary w-full py-4 text-lg">
+            {sending ? <><Loader2 className="h-5 w-5 animate-spin" aria-hidden /> Sending your link</> : "Continue with email"}
+          </button>
+          <p className="text-sm">No password to remember. <DemoBadge>Demo</DemoBadge> No email is sent.</p>
+          <button type="button" onClick={() => setEmail("martin@example.com")} className="min-h-11 text-sm font-medium underline underline-offset-4">Use the demo email</button>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -60,52 +97,68 @@ export function HomeScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
   const hasGoal = me.stake > 0;
   const joined = s.people.filter((p) => p.stake > 0).length;
   const progress = Math.round(((72 - s.hoursLeft) / 72) * 100);
+  const pct = s.stage === "ended" ? 100 : Math.max(4, progress);
+  const first = (s.email.split("@")[0] || "Martin").replace(/^./, (c) => c.toUpperCase());
   return (
     <ScreenBody>
       <header className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-lg font-medium tracking-tight"><span className="dot" aria-hidden /> {PROJECT_NAME}</span>
-        <Avatar id="martin" />
+        <Wordmark />
+        <Avatar id="martin" size={48} />
       </header>
-      <section className="card p-5" aria-label="Your money">
-        <p className="text-sm text-muted">Your money</p>
-        <p className="mt-1 text-[40px] font-medium leading-none tracking-tight tabular-nums">{usd(s.balance + onTheLine(s))}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="pill-locked">On the line {usd(onTheLine(s))}</span>
-          <span className="rounded-full border border-stone px-3 py-0.5 text-sm text-muted">Free {usd(s.balance)}</span>
-        </div>
-      </section>
+      <h1 className="-mt-1 text-[32px] font-medium tracking-tight">Hi, {first}</h1>
+      <div className="grid grid-cols-[1.15fr_1fr] gap-3">
+        <section className="surface-ink p-4" aria-label="Free balance">
+          <p className="text-sm text-white/75">Balance</p>
+          <p className="big mt-2 text-[34px] text-lilac">{usd(s.balance)}</p>
+        </section>
+        <section className="pastel bg-peach p-4" aria-label="On the line">
+          <p className="text-sm">On the line</p>
+          <p className="big mt-2 text-[34px]">{usd(onTheLine(s)).replace(".00", "")}</p>
+          <Icon3D name="coins-stack" size={72} className="absolute -right-2 -top-1" />
+        </section>
+      </div>
       <UrgencyBanner hours={me.status === "on_track" && s.stage === "running" ? s.hoursLeft : 99} />
 
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-medium">Your goals</h2>
-        {s.stage === "empty" && <button onClick={() => go("new")} className="flex min-h-11 items-center gap-1 px-1 text-sm font-medium text-forest"><Plus className="h-4 w-4" aria-hidden /> New goal</button>}
+        <h2 className="text-lg font-medium">{hasGoal ? "Active goals" : "Your goals"}</h2>
+        {s.stage === "empty" && <button onClick={() => go("new")} className="btn btn-primary btn-sm"><Plus className="h-4 w-4" aria-hidden /> New goal</button>}
       </div>
       {hasGoal ? (
-        <button onClick={() => go("goal")} className="card w-full space-y-3 p-5 text-left" aria-label={`Open goal: ${me.goal}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-medium">{me.goal}</p>
-              <p className="text-sm text-muted">{timeLeft(s.hoursLeft)} · <span className="pill-locked">Locked {usd(me.stake)}</span></p>
-            </div>
+        <button onClick={() => go("goal")} className="surface-lilac w-full p-5 text-left" aria-label={`Open goal: ${me.goal}`}>
+          <Icon3D name="padlock-key" size={104} className="float absolute -right-1 -top-1" />
+          <div className="flex flex-wrap items-center gap-2 pr-20">
+            <LockedPill>Locked</LockedPill>
             <StatusChip status={me.status} />
           </div>
-          <div className="bar" aria-hidden><span style={{ width: `${s.stage === "ended" ? 100 : Math.max(4, progress)}%` }} /></div>
+          <p className="mt-3 pr-20 text-[22px] font-medium leading-tight tracking-tight">{me.goal}</p>
+          <div className="mt-3 flex items-center gap-3">
+            <p className="big text-[56px]">{usd(me.stake).replace(".00", "")}</p>
+            <span className="pill bg-white text-ink">{timeLeft(s.hoursLeft)}</span>
+          </div>
+          <div className="mt-4 flex justify-between text-sm"><span>Time used</span><span className="mono">{pct}%</span></div>
+          <div className="bar mt-2" aria-hidden><span style={{ width: `${pct}%` }} /></div>
         </button>
       ) : (
-        <div className="card p-5">
-          <p className="font-medium">Nothing on the line yet.</p>
-          <p className="mt-1 text-sm text-muted">Pick a goal you could measure, lock money on it, and your friends will keep you honest.</p>
-          <button onClick={() => go("new")} className="btn btn-primary mt-4 w-full py-4 text-lg">+ New goal</button>
+        <div className="surface-lilac p-5">
+          <Icon3D name="padlock-key" size={104} className="float absolute -right-1 -top-1" />
+          <p className="pr-24 text-[22px] font-medium leading-tight">Nothing on the line yet.</p>
+          <p className="mt-2 pr-20 text-sm">Pick a goal you could measure, lock money on it, and your friends will keep you honest.</p>
+          <button onClick={() => go("new")} className="btn btn-primary mt-5 w-full py-4 text-lg"><Plus className="h-5 w-5" aria-hidden /> New goal</button>
         </div>
       )}
 
-      <h2 className="mt-2 text-lg font-medium">Groups</h2>
-      <button onClick={() => go("group")} className="card flex w-full items-center justify-between gap-3 p-5 text-left">
-        <span>
-          <span className="flex items-center gap-2 font-medium"><span className="dot" aria-hidden /> {GROUP_NAME}</span>
-          <span className="block text-sm text-muted">{joined} of 5 locked in · pot {usd(pot(s))}</span>
+      <div className="mt-1 flex items-center justify-between">
+        <h2 className="text-lg font-medium">Groups</h2>
+        <span className="text-sm text-muted">1 group</span>
+      </div>
+      <button onClick={() => go("group")} className="card flex w-full items-center gap-3 p-4 text-left">
+        <span className="flex -space-x-2" aria-hidden>{s.people.slice(0, 4).map((p) => <Avatar key={p.id} id={p.id} size={30} />)}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium">{GROUP_NAME}</span>
+          <span className="block text-sm text-muted">{joined} of 5 locked in · {usd(pot(s)).replace(".00", "")} pot</span>
         </span>
-        <span className="flex -space-x-2" aria-hidden>{s.people.filter((p) => p.stake > 0).slice(0, 4).map((p) => <Avatar key={p.id} id={p.id} size={28} />)}</span>
+        <Icon3D name="money-bag" size={44} />
+        <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
       </button>
     </ScreenBody>
   );
@@ -113,6 +166,12 @@ export function HomeScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
 
 // -------------------------------------------------------------------- 3 new goal (wizard)
 const CATEGORIES = ["Fitness", "Study", "Habit", "Work"] as const;
+const CAT_STYLE: Record<(typeof CATEGORIES)[number], { bg: string; icon: ReactNode }> = {
+  Fitness: { bg: "bg-mint", icon: <Dumbbell className="h-4 w-4" aria-hidden /> },
+  Study: { bg: "bg-sky", icon: <BookOpen className="h-4 w-4" aria-hidden /> },
+  Habit: { bg: "bg-butter", icon: <Repeat className="h-4 w-4" aria-hidden /> },
+  Work: { bg: "bg-peach", icon: <Briefcase className="h-4 w-4" aria-hidden /> },
+};
 const DEADLINES: [string, number][] = [["Tomorrow", 24], ["Sunday", 72], ["1 week", 168]];
 
 export function NewGoalScreen({ s, d, go }: ScreenProps) {
@@ -154,81 +213,101 @@ export function NewGoalScreen({ s, d, go }: ScreenProps) {
 
   return (
     <ScreenBody>
-      <Back onClick={() => (step > 1 ? setStep(step - 1) : go("home"))} />
-      <header>
-        <p className="text-sm text-muted">Step {step} of 3</p>
-        <div className="bar mt-2" aria-hidden><span style={{ width: `${(step / 3) * 100}%` }} /></div>
-      </header>
+      <TopBar onBack={() => (step > 1 ? setStep(step - 1) : go("home"))} title="New goal" right={<span className="mono">{step}/3</span>} />
+      <div className="steps" aria-label={`Step ${step} of 3`}>{[1, 2, 3].map((i) => <i key={i} data-on={i <= step} />)}</div>
 
       {step === 1 && (
         <>
-          <h1 className="text-[30px] font-medium leading-tight tracking-tight">What do you want to get done?</h1>
+          <h1 className="text-[28px] font-medium leading-tight tracking-tight">What do you want to get done?</h1>
           <label className="block">
             <span className="sr-only">Your goal</span>
-            <input value={text} onChange={(e) => { setText(e.target.value.slice(0, 80)); setCoach(null); }} placeholder="Run 21 km by Sunday" className="card w-full px-4 py-3 text-lg outline-none placeholder:text-muted/70 focus:border-forest" />
+            <input value={text} onChange={(e) => { setText(e.target.value.slice(0, 80)); setCoach(null); }} placeholder="Run 21 km by Sunday" className="h-14 w-full rounded-2xl bg-white px-4 text-lg shadow-[0_10px_28px_rgba(26,26,24,0.08)] outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-deep" />
           </label>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Category">
-            {CATEGORIES.map((c) => <button key={c} type="button" onClick={() => setCategory(c)} aria-pressed={category === c} className="tile min-h-9 px-3 text-sm">{c}</button>)}
-          </div>
-          <div>
-            <button type="button" onClick={askGrok} disabled={!text.trim()} className="flex min-h-11 items-center gap-1.5 rounded-full border border-stone px-4 text-sm font-medium disabled:opacity-45">
-              <Sparkles className="h-4 w-4 text-forest" aria-hidden /> Make it measurable with Grok <DemoBadge />
-            </button>
-            {coach && (
-              <div role="status" className={`mt-3 rounded-xl p-4 text-sm ${coach.measurable ? "bg-mint" : "border border-danger"}`}>
-                <p className={`font-medium ${coach.measurable ? "text-forest" : "text-danger"}`}>{coach.note}</p>
-                {coach.measurable && <p className="mt-1 text-muted">We count: {coach.metric.toLowerCase()}. Proof: {coach.proof.toLowerCase()}.</p>}
+          <fieldset>
+            <legend className="mb-2 text-sm text-muted">Category</legend>
+            <div className="grid grid-cols-4 gap-2">
+              {CATEGORIES.map((c) => (
+                <button key={c} type="button" onClick={() => setCategory(c)} aria-pressed={category === c} className={`cat relative flex h-[78px] flex-col items-start justify-between p-2.5 text-sm font-medium ${CAT_STYLE[c].bg}`}>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/70">{CAT_STYLE[c].icon}</span>
+                  {c}
+                  {category === c && <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-white"><Check className="h-3 w-3" aria-hidden /></span>}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <section className="surface-ink p-4" aria-label="Grok coach">
+            <Icon3D name="chat-check" size={64} className="absolute -right-1 -top-1" />
+            <span className="pill bg-white/10 text-lilac"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Grok coach <DemoBadge /></span>
+            {coach ? (
+              <div role="status" className="mt-3 pr-10 text-sm">
+                <p className={`font-medium ${coach.measurable ? "text-white" : "text-butter"}`}>{coach.note}</p>
+                {coach.measurable && <p className="mt-1 text-white/75">We count: {coach.metric.toLowerCase()}. Proof: {coach.proof.toLowerCase()}.</p>}
               </div>
+            ) : (
+              <p className="mt-3 pr-12 text-sm text-white/80">Type a goal and Grok turns it into something your friends can check.</p>
             )}
-          </div>
+            <button type="button" onClick={askGrok} disabled={!text.trim()} className="btn btn-sm mt-3 bg-lilac text-deep">
+              <Sparkles className="h-4 w-4" aria-hidden /> Make it measurable
+            </button>
+          </section>
           <div className="mt-auto" />
-          <button disabled={!goal || (coach !== null && !coach.measurable)} onClick={() => setStep(2)} className="btn btn-primary w-full py-4 text-lg">Next</button>
+          <button disabled={!goal || (coach !== null && !coach.measurable)} onClick={() => setStep(2)} className="btn btn-primary w-full py-4 text-lg">Continue</button>
         </>
       )}
 
       {step === 2 && (
         <>
-          <h1 className="text-[30px] font-medium leading-tight tracking-tight">When, and who checks?</h1>
+          <h1 className="text-[28px] font-medium leading-tight tracking-tight">When, and who checks?</h1>
           <fieldset>
-            <legend className="mb-2 text-sm text-muted">Deadline</legend>
+            <legend className="mb-2 flex items-center gap-2 text-sm text-muted">Deadline</legend>
             <div className="grid grid-cols-3 gap-2">
-              {DEADLINES.map(([label, h]) => <button key={label} type="button" onClick={() => setDeadline(h)} aria-pressed={deadline === h} className="tile min-h-12 py-2">{label}</button>)}
+              {DEADLINES.map(([label, h]) => <button key={label} type="button" onClick={() => setDeadline(h)} aria-pressed={deadline === h} className="tile min-h-14 py-2 font-medium">{label}</button>)}
             </div>
           </fieldset>
           <fieldset>
             <legend className="mb-2 text-sm text-muted">How it is verified</legend>
             <div className="space-y-2">
-              <button type="button" onClick={() => setVerify("friends")} aria-pressed={verify === "friends"} className="tile w-full p-4 text-left"><span className="block font-medium">Friends vote</span><span className="text-sm opacity-80">The friends who put money in confirm.</span></button>
-              <button type="button" onClick={() => setVerify("photo")} aria-pressed={verify === "photo"} className="tile w-full p-4 text-left"><span className="block font-medium">Photo proof</span><span className="text-sm opacity-80">You upload proof, friends approve or dispute.</span></button>
-              <div className="tile flex w-full items-center justify-between p-4 text-left opacity-60"><span className="font-medium">Strava, Screen Time</span><span className="rounded-md bg-stone px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-muted">Coming soon</span></div>
+              {([["friends", "Friends vote", "The friends who put money in confirm.", "friends"], ["photo", "Photo proof", "You upload proof, friends approve or dispute.", "camera"]] as const).map(([id, title, sub, icon]) => (
+                <button key={id} type="button" onClick={() => setVerify(id)} aria-pressed={verify === id} className="tile flex w-full items-center gap-3 p-3 text-left">
+                  <Icon3D name={icon} size={48} />
+                  <span className="min-w-0 flex-1"><span className="block font-medium">{title}</span><span className="text-sm opacity-80">{sub}</span></span>
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-md border-2 ${verify === id ? "border-deep bg-deep text-white" : "border-stone"}`}>{verify === id && <Check className="h-4 w-4" aria-hidden />}</span>
+                </button>
+              ))}
+              <div className="flex w-full items-center justify-between rounded-2xl bg-stone2 p-4 text-left text-muted"><span><span className="block font-medium text-ink/70">Strava, Screen Time</span><span className="text-sm">Proof comes in by itself</span></span><span className="pill bg-white/70 text-xs">Coming soon</span></div>
             </div>
           </fieldset>
           <div className="mt-auto" />
-          <button onClick={() => setStep(3)} className="btn btn-primary w-full py-4 text-lg">Next</button>
+          <button onClick={() => setStep(3)} className="btn btn-primary w-full py-4 text-lg">Continue</button>
         </>
       )}
 
       {step === 3 && (
         <>
-          <h1 className="text-[30px] font-medium leading-tight tracking-tight">How much would it hurt to lose?</h1>
-          <p className="text-muted">&ldquo;{goal}&rdquo; · {deadlineLabel}</p>
+          <h1 className="text-[28px] font-medium leading-tight tracking-tight">How much would it hurt to lose?</h1>
           <StakePicker value={stake} onChange={(v) => { setStake(v); setSure(false); }} min={5} max={Math.floor(s.balance)} suggested={suggested} label="Money you lock" />
           {veryHigh && !tooMuch && (
             <label className="flex items-start gap-3 text-sm">
-              <input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} className="mt-1 h-5 w-5 accent-[#1F5F4A]" />
+              <input type="checkbox" checked={sure} onChange={(e) => setSure(e.target.checked)} className="mt-1 h-5 w-5 accent-[#2E2260]" />
               <span>Yes, I want to lock {usd(stake)}. I understand I lose it if I walk away.</span>
             </label>
           )}
-          <div className="space-y-2 rounded-xl bg-mint p-4 text-sm" aria-live="polite">
-            <p className="font-medium">If you miss it, you lose {usd(stake)}. If you keep it, you get it back plus a share of what others lose.</p>
-            <p><span className="font-medium text-forest">Keep your word:</span> {usd(stake)} back, plus {KEEPERS_PERCENT}% of forfeits shared by stake.</p>
-            <p><span className="font-medium text-danger">Walk away:</span> you lose {usd(stake)}. {FEE_PERCENT}% goes to {PROJECT_NAME}.</p>
-            <p className="text-muted">Locked in the contract, not with us.</p>
-          </div>
+          <section className="surface-lilac space-y-2 p-5 text-sm" aria-live="polite" aria-label="Summary">
+            <Icon3D name="padlock-key" size={92} className="float absolute -right-1 -top-1" />
+            <p>Summary</p>
+            <p className="pr-20 text-[20px] font-medium leading-tight">{goal} · {deadlineLabel}</p>
+            <div className="flex items-center gap-3 pb-1"><p className="big text-[52px]">{usd(stake).replace(".00", "")}</p><LockedPill>Locked</LockedPill></div>
+            <div className="space-y-2 border-t border-deep/20 pt-3">
+              <p className="flex gap-2"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-locked text-forest"><Check className="h-3 w-3" aria-hidden /></span><span><span className="font-semibold">Keep your word:</span> {usd(stake)} back, plus {KEEPERS_PERCENT}% of forfeits shared by stake.</span></p>
+              <p className="flex gap-2"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-deep/15"><X className="h-3 w-3" aria-hidden /></span><span><span className="font-semibold">Walk away:</span> you lose {usd(stake)}. {FEE_PERCENT}% goes to {PROJECT_NAME}.</span></p>
+            </div>
+          </section>
+          <p className="text-center text-sm text-muted">Paid from your balance · <span className="mono">{usd(s.balance)}</span></p>
           <div className="mt-auto" />
           <button disabled={tooMuch || (veryHigh && !sure)} onClick={() => setLocking(true)} className="btn btn-primary w-full py-4 text-lg">
-            {tooMuch ? "Add funds first" : `Lock it in · ${usd(stake)}`}
+            {tooMuch ? "Add funds first" : <><Lock className="h-5 w-5" aria-hidden /> Lock it in · {usd(stake)}</>}
           </button>
+          <p className="-mt-1 text-center text-xs text-muted">Locked by code, not held by us.</p>
         </>
       )}
     </ScreenBody>
@@ -236,9 +315,17 @@ export function NewGoalScreen({ s, d, go }: ScreenProps) {
 }
 
 // -------------------------------------------------------------------- 4 group
+export function GroupTabs({ active, go }: { active: "group" | "feed"; go: (r: Route) => void }) {
+  return (
+    <div className="seg" role="tablist" aria-label="Group views">
+      <button onClick={() => go("group")} aria-current={active === "group" ? "page" : undefined}>Members</button>
+      <button onClick={() => go("feed")} aria-current={active === "feed" ? "page" : undefined}>Feed</button>
+    </div>
+  );
+}
+
 export function GroupScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
   const [copied, setCopied] = useState(false);
-  const y = useMemo(() => yieldFor(s), [s]);
   const invite = async () => {
     const url = `${location.origin}/demo?invite=austin-runners`;
     try {
@@ -249,43 +336,37 @@ export function GroupScreen({ s, go }: Pick<ScreenProps, "s" | "go">) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
+  const inCount = s.people.filter((p) => p.stake > 0).length;
   return (
     <ScreenBody>
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-[30px] font-medium leading-tight tracking-tight"><span className="dot" aria-hidden /> {GROUP_NAME}</h1>
-          <p className="text-sm text-muted">{s.people.filter((p) => p.stake > 0).length} locked in · {s.people.length} people</p>
-        </div>
-        <button onClick={invite} className="flex min-h-11 items-center gap-1.5 rounded-full border border-stone px-4 text-sm font-medium"><Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite friends"}</button>
+      <header className="flex items-center justify-between gap-3">
+        <h1 className="text-[30px] font-medium leading-tight tracking-tight">{GROUP_NAME}</h1>
+        <button onClick={() => go(s.stage === "ended" ? "results" : "goal")} className="btn btn-quiet btn-sm border-0 shadow-[0_10px_28px_rgba(26,26,24,0.08)]">{s.stage === "ended" ? "Results" : "My goal"}</button>
       </header>
-      <section className="card p-5" aria-label="Pot">
-        <p className="text-sm text-muted">In the pot</p>
-        <p className="mt-1 text-[36px] font-medium leading-none tracking-tight tabular-nums">{usd(pot(s))}</p>
-        {pot(s) > 0 && (
-          <p className="mt-3 text-sm text-muted">
-            Earning about {usd(y.total)} while it waits, simulated at 4% a year <DemoBadge />
-          </p>
-        )}
+      <GroupTabs active="group" go={go} />
+      <section className="surface-lilac p-5" aria-label="Pot">
+        <Icon3D name="money-bag" size={112} className="float absolute -right-2 -top-2" />
+        <div className="flex items-center gap-2"><p>Group pot</p>{pot(s) > 0 && <LockedPill>Locked</LockedPill>}</div>
+        <p className="big mt-2 text-[64px]">{usd(pot(s)).replace(".00", "")}</p>
+        <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+          <span>{inCount} of {s.people.length} locked in</span>
+          <span className="flex -space-x-2" aria-hidden>{s.people.filter((p) => p.stake > 0).map((p) => <Avatar key={p.id} id={p.id} size={28} />)}</span>
+        </div>
+        {pot(s) > 0 && <p className="mt-2 text-xs">Your money stays locked until the deadline.</p>}
       </section>
-      <ul className="space-y-3" aria-label="People and goals">
-        {s.people.map((p) => (
-          <li key={p.id} className="card flex items-center gap-3 p-4">
-            <Avatar id={p.id} />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">{p.id === "martin" ? "You" : p.name}</p>
-              <p className="truncate text-sm text-muted">{p.goal || "No goal yet"}</p>
-            </div>
-            <div className="shrink-0 text-right">
-              {p.stake > 0 ? <p className="mb-1 text-sm tabular-nums">{usd(p.stake)}</p> : null}
+      <ul className="grid grid-cols-2 gap-3" aria-label="People and goals">
+        {s.people.map((p, i) => (
+          <li key={p.id} className={`pastel flex flex-col gap-2 p-4 ${p.id === "martin" ? "bg-mint" : p.id === "dani" ? "bg-lilac-tint" : PASTEL[p.id]} ${i === s.people.length - 1 && s.people.length % 2 === 1 ? "col-span-2" : ""}`}>
+            <div className="flex items-center justify-between gap-2">
+              <Avatar id={p.id} size={40} white />
               <StatusChip status={p.status} />
             </div>
+            <p className="mt-1 text-lg font-medium leading-tight">{p.id === "martin" ? "You" : p.name}</p>
+            <p className="line-clamp-2 text-sm">{p.goal || "No goal yet"}{p.stake > 0 ? <> · <span className="mono">{usd(p.stake).replace(".00", "")}</span></> : null}</p>
           </li>
         ))}
       </ul>
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={() => go("feed")} className="btn btn-quiet">Group feed</button>
-        <button onClick={() => go(s.stage === "ended" ? "results" : "goal")} className="btn btn-quiet">{s.stage === "ended" ? "Results" : "My goal"}</button>
-      </div>
+      <button onClick={invite} className="btn btn-primary w-full py-4 text-lg"><Link2 className="h-5 w-5" aria-hidden /> {copied ? "Link copied" : "Invite friends"}</button>
       <p className="text-sm text-muted"><Check className="mr-1 inline h-4 w-4 text-forest" aria-hidden />Only people who put money in can vote or confirm.</p>
     </ScreenBody>
   );

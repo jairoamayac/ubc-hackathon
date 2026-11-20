@@ -13,7 +13,7 @@ import { Check3 } from "./demo/parts";
 type Reason = { label: string; ok: boolean; detail: string };
 type Verdict = { accepted: boolean; headline: string; reasons: Reason[] };
 
-const STEP_STEPS = ["Dispute opened", "Detected on-chain", "Grok Bot is reviewing…"];
+const STEP_STEPS = ["Dispute opened", "Dispute received", "Grok Bot is reviewing…"];
 const STEP_DELAYS = [700, 900, 2300];
 
 function simulateReview(goal: string, accepted: boolean): Verdict {
