@@ -135,18 +135,13 @@ export class LiveClient {
       : null;
   }
 
-  /** Locked money goes to the Kamino lending pool in the same transaction (operator crank, sponsor signs). */
-  private supplyIxs(crew: PublicKey, amount: bigint) {
-    return this.kamino && amount > 0n
-      ? [hm.refreshReserveIx(this.kamino), hm.kaminoSupplyIx(this.sponsor, this.mint, crew, this.kamino, amount)]
-      : [];
-  }
-  /** Before money leaves a pot (payouts, fee, withdrawals), bring it back from Kamino with the interest. */
-  private async redeemIxs(crew: PublicKey) {
-    if (!this.kamino) return [];
-    const info = await this.conn.getAccountInfo(crew, "confirmed");
-    if (!info || hm.decodeCrewKamino(info.data).ctokens === 0n) return [];
-    return [hm.refreshReserveIx(this.kamino), hm.kaminoRedeemIx(this.sponsor, this.mint, crew, this.kamino)];
+  /**
+   * Anything that prices a pot's shares (deposit, withdraw, a stake, the fee) runs with the pot back home:
+   * Kamino returns principal plus interest, the action runs at the exact price, and the whole vault goes
+   * back to the lending pool, all in one transaction (the sponsor signs the supply as operator).
+   */
+  private withKamino(crew: PublicKey, action: TransactionInstruction[]) {
+    return this.kamino ? hm.withKamino(this.sponsor, this.mint, crew, this.kamino, action) : action;
   }
 
   static async connect() {
@@ -231,9 +226,8 @@ export class LiveClient {
   }
   /** Joins first when needed, then moves dollars from the person's account into the crew. */
   async deposit(crew: PublicKey, usd: number, isMember: boolean) {
-    const ixs = isMember ? [] : [hm.joinCrewIx(this.sponsor, this.owner.publicKey, crew)];
-    ixs.push(hm.depositIx(this.owner.publicKey, this.mint, crew, hm.fromUsd(usd)));
-    return this.send(ixs);
+    const join = isMember ? [] : [hm.joinCrewIx(this.sponsor, this.owner.publicKey, crew)];
+    return this.send([...join, ...this.withKamino(crew, [hm.depositIx(this.owner.publicKey, this.mint, crew, hm.fromUsd(usd))])]);
   }
   /** Takes out a dollar amount (or everything) by burning the matching shares. */
   async withdraw(crew: CrewView, usd: number | "all") {
@@ -241,13 +235,13 @@ export class LiveClient {
     const shares = usd === "all" || usd >= crew.me!.value
       ? m.shares
       : (m.shares * hm.fromUsd(usd)) / hm.fromUsd(crew.me!.value);
-    return this.send([...(await this.redeemIxs(crew.address)), hm.withdrawIx(this.owner.publicKey, this.mint, crew.address, shares)]);
+    return this.send(this.withKamino(crew.address, [hm.withdrawIx(this.owner.publicKey, this.mint, crew.address, shares)]));
   }
   openCall(crew: PublicKey, direction: 0 | 1, boost: number, usd: number) {
-    return this.send([hm.openCallIx(this.sponsor, this.owner.publicKey, this.mint, crew, direction, boost, hm.fromUsd(usd))]);
+    return this.send(this.withKamino(crew, [hm.openCallIx(this.sponsor, this.owner.publicKey, this.mint, crew, direction, boost, hm.fromUsd(usd))]));
   }
   settle(crew: PublicKey) {
-    return this.send([hm.settleCallIx(this.sponsor, this.mint, crew, this.owner.publicKey)]);
+    return this.send(this.withKamino(crew, [hm.settleCallIx(this.sponsor, this.mint, crew, this.owner.publicKey)]));
   }
 
   // ------------------------------------------------------------ social layer
@@ -389,16 +383,15 @@ export class LiveClient {
     const id = BigInt(Date.now());
     const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
     const ixs = [hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(stakeUsd), endsAt)];
-    if (join) ixs.push(hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, hm.challengePda(crew, id)));
+    if (join) ixs.push(...this.withKamino(crew, [hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, hm.challengePda(crew, id))]));
     return this.send(ixs);
   }
   joinChallenge(crew: PublicKey, challenge: PublicKey) {
-    return this.send([hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, challenge)]);
+    return this.send(this.withKamino(crew, [hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, challenge)]));
   }
   /** Put money on your own goal. */
   joinWithGoal(crew: PublicKey, challenge: PublicKey, goal: string, stakeUsd: number) {
-    return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd)),
-      ...this.supplyIxs(crew, hm.fromUsd(stakeUsd))]);
+    return this.send(this.withKamino(crew, [hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]));
   }
   /** Start a commitment round and put money on your goal in the same tap. */
   startCommitment(crew: PublicKey, title: string, minStakeUsd: number, minutes: number, goal: string, stakeUsd: number) {
@@ -407,19 +400,19 @@ export class LiveClient {
     const ch = hm.challengePda(crew, id);
     return this.send([
       hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(minStakeUsd), endsAt),
-      hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd)),
-      ...this.supplyIxs(crew, hm.fromUsd(stakeUsd)),
+      ...this.withKamino(crew, [hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, ch, goal, hm.fromUsd(stakeUsd))]),
     ]);
   }
   voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
     return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
   }
-  /** Collect your result. The first person to collect also moves the platform's 5% (sponsored, once). */
-  async claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
-    const ixs = await this.redeemIxs(crew);
-    if (!feeTaken) ixs.push(hm.takeFeeIx(this.sponsor, this.mint, crew, challenge));
-    ixs.push(hm.claimChallengeIx(this.owner.publicKey, crew, challenge));
-    return this.send(ixs);
+  /**
+   * Collect your result: shares move inside the pot, so no money needs to leave Kamino. The first person to
+   * collect also moves the platform's 5% (sponsored, once), which does need the pot home.
+   */
+  claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
+    const claim = hm.claimChallengeIx(this.owner.publicKey, crew, challenge);
+    return this.send(feeTaken ? [claim] : this.withKamino(crew, [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge), claim]));
   }
   /**
    * After the voting window (hm.VOTE_WINDOW_SECS past the deadline), settles every entry nobody decided:

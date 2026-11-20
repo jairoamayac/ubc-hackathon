@@ -114,7 +114,7 @@ const b64 = (tx: Transaction) => btoa(String.fromCharCode(...tx.serialize()));
 /** Only sponsors calls to our program, and the sponsor may only appear as the rent payer. */
 function vet(tx: Transaction, sponsor: PublicKey): string | null {
   if (!tx.feePayer?.equals(sponsor)) return "Fee payer must be the sponsor.";
-  if (tx.instructions.length === 0 || tx.instructions.length > 7) return "Unexpected transaction.";
+  if (tx.instructions.length === 0 || tx.instructions.length > 9) return "Unexpected transaction.";
   for (const ix of tx.instructions) {
     if (ix.programId.equals(COMPUTE_BUDGET)) {
       // Cap what a sponsored transaction can cost: ≤ 400k CU at ≤ 1,000,000 µlamports/CU (~0.0004 SOL).
