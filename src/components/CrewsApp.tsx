@@ -17,7 +17,7 @@ export type Act = (label: string, fn: () => Promise<unknown>, done?: string) => 
 
 const YEAR = 31_536_000;
 /** Background refresh. Slow on purpose: the shared public RPC rate-limits, and actions refresh right away anyway. */
-const POLL_MS = 30_000;
+const POLL_MS = 45_000;
 /** How long an unknown group link spins before we say it does not exist. */
 const GROUP_WAIT_MS = 8_000;
 

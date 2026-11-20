@@ -19,7 +19,7 @@ import { usd } from "./ui";
 type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView };
 
 const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
-const DETAIL_POLL_MS = 20_000;
+const DETAIL_POLL_MS = 30_000;
 const DURATIONS: [string, number][] = [["2 minutes", 2], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["3 days", 4320], ["1 week", 10080]];
 
 export function CrewRoom(props: {
@@ -73,9 +73,16 @@ export function CrewRoom(props: {
       if (!stop) timer = setTimeout(tick, ok ? DETAIL_POLL_MS : Math.min(30_000, 2_000 * 2 ** (fails - 1)));
     };
     timer = setTimeout(tick, 0);
+    const onVisible = () => {
+      if (document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, 0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stop = true;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
   useEffect(() => {
