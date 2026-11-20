@@ -5,6 +5,9 @@
 //   GET  /api/disputes/:id/image the proof screenshot, so the Bot can open it by link
 //   POST /api/verify             task "verify": Grok checks public data itself (e.g. an X follower count)
 //   GET  /api/verifications/:id  status and result of a verification, for the app to poll
+//   POST /api/coach              task "coach": Grok turns a wish into a measurable goal with a stake that hurts
+//   POST /api/group/ask          task "group": Grok writes reminders and nudges for the group
+//   GET  /api/jobs/:id           status and result of a coach or group job, for the app to poll
 //   POST /api/streams/quicknode  a QuickNode Stream posts DisputeOpened events here (needs the program to emit the log)
 // The council only proposes. Nothing here signs a transaction or moves money.
 // Secrets (never in the repo): GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY, QUICKNODE_STREAM_SECRET (optional).
@@ -42,6 +45,16 @@ interface VerifyRecord {
   checked_at?: string;
   source?: string;
   reason?: string;
+  tokenHash?: string;
+}
+interface JobRecord {
+  job_id: string;
+  kind: "coach" | "group";
+  status: "pending" | "decided" | "failed";
+  created_at: number;
+  decided_at?: number;
+  error?: string;
+  result?: Record<string, unknown>;
   tokenHash?: string;
 }
 const VERIFY_VERDICTS = ["KEPT", "MISSED", "CANNOT_VERIFY"] as const;
@@ -173,6 +186,55 @@ const publicView = (r: Record_): DisputeView => {
   return view;
 };
 
+
+/** Coach and group jobs: the callback is matched by its one-time token (jt:<hash> -> job id), so it does not need to echo any id. */
+async function createJob(env: GrokEnv, base: string, kind: "coach" | "group", fields: Record<string, unknown>): Promise<Created> {
+  if (!env.GROK_WEBHOOK_URL || !env.GROK_WEBHOOK_KEY) return { status: 503, body: { error: "Grok is not configured on this server." } };
+  if (!env.DISPUTES) return { status: 503, body: { error: "Storage is not configured on this server." } };
+  const id = crypto.randomUUID();
+  const token = hex(crypto.getRandomValues(new Uint8Array(32)));
+  const tokenHash = await sha256(token);
+  const record: JobRecord = { job_id: id, kind, status: "pending", created_at: Date.now(), tokenHash };
+  await env.DISPUTES.put(`j:${id}`, JSON.stringify(record), { expirationTtl: TTL });
+  await env.DISPUTES.put(`jt:${tokenHash}`, id, { expirationTtl: TTL });
+  const payload = { task: kind, ...fields, callback_url: `${base}/api/grok/callback`, callback_token: token };
+  try {
+    const res = await fetch(env.GROK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.GROK_WEBHOOK_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`Grok Bot did not start the run (HTTP ${res.status}).`);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "Could not reach Grok Bot.";
+    await env.DISPUTES.put(`j:${id}`, JSON.stringify({ ...record, status: "failed", error, tokenHash: undefined }), { expirationTtl: TTL });
+    return { status: 502, body: { error, job_id: id, status: "failed" } };
+  }
+  return { status: 202, body: { job_id: id, status: "pending" } };
+}
+
+function parseCoach(b: Record<string, unknown>) {
+  const goal = clip(b.goal, 200);
+  if (!goal) return null;
+  const stake = typeof b.suggested_stake_usd === "number" && Number.isFinite(b.suggested_stake_usd) ? Math.min(100_000, Math.max(0, Math.round(b.suggested_stake_usd))) : null;
+  return {
+    goal, criterion: clip(b.criterion, 300), deadline: clip(b.deadline, 60), proof_method: clip(b.proof_method, 300),
+    verifiable_by: b.verifiable_by === "public_data" ? "public_data" : "friends",
+    suggested_stake_usd: stake, stake_reason: clip(b.stake_reason, 400),
+    tips: (Array.isArray(b.tips) ? b.tips : []).slice(0, 5).map((x) => clip(x, 200)).filter(Boolean),
+  };
+}
+
+function parseGroup(b: Record<string, unknown>) {
+  const messages = (Array.isArray(b.messages) ? b.messages : []).slice(0, 8).flatMap((raw) => {
+    const m = (raw ?? {}) as Record<string, unknown>;
+    const text = clip(m.text, 400);
+    return text ? [{ to: clip(m.to, 60) || "all", text }] : [];
+  });
+  return messages.length ? { messages } : null;
+}
+
 /** Best effort per-IP limit so the public endpoints cannot burn the Bot's hourly runs. */
 async function rateLimited(req: Request, env: GrokEnv): Promise<Response | null> {
   if (!env.DISPUTES) return null;
@@ -267,6 +329,17 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
       await env.DISPUTES.put(`v:${vid}`, JSON.stringify(done), { expirationTtl: TTL });
       return json({ ok: true });
     }
+    if (!clip(body.data.dispute_id, 40)) {
+      // coach or group: matched by the one-time token alone
+      const jid = await env.DISPUTES.get(`jt:${await sha256(token)}`);
+      const rawJ = jid ? await env.DISPUTES.get(`j:${jid}`) : null;
+      const job = rawJ ? (JSON.parse(rawJ) as JobRecord) : null;
+      if (!job || job.status !== "pending" || !job.tokenHash || !same(job.tokenHash, await sha256(token))) return json({ error: "Unauthorized" }, 401);
+      const result = job.kind === "coach" ? parseCoach(body.data) : parseGroup(body.data);
+      if (!result) return json({ error: `Invalid ${job.kind} result.` }, 400);
+      await env.DISPUTES.put(`j:${job.job_id}`, JSON.stringify({ ...job, status: "decided", decided_at: Date.now(), tokenHash: undefined, result }), { expirationTtl: TTL });
+      return json({ ok: true });
+    }
     const id = clip(body.data.dispute_id, 40);
     if (!UUID.test(id)) return json({ error: "Unauthorized" }, 401);
     const raw = await env.DISPUTES.get(`d:${id}`);
@@ -290,6 +363,47 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
     if (limited) return limited;
     const out = await createVerification(env, baseUrl(env, url), d);
     return json(out.body, out.status);
+  }
+
+  if (path === "/api/coach" && req.method === "POST") {
+    const body = await readJson(req, 10_000);
+    if (!body.ok) return body.res;
+    const d = body.data;
+    if (!clip(d.raw_goal, 200)) return json({ error: "Write your goal first." }, 400);
+    const limited = await rateLimited(req, env);
+    if (limited) return limited;
+    const out = await createJob(env, baseUrl(env, url), "coach", {
+      request_id: crypto.randomUUID(), member: clip(d.member, 60), raw_goal: clip(d.raw_goal, 200),
+      ...(clip(d.deadline, 40) ? { deadline: clip(d.deadline, 40) } : {}), ...(clip(d.context, 400) ? { context: clip(d.context, 400) } : {}),
+    });
+    return json(out.body, out.status);
+  }
+
+  if (path === "/api/group/ask" && req.method === "POST") {
+    const body = await readJson(req, 30_000);
+    if (!body.ok) return body.res;
+    const d = body.data;
+    const members = (Array.isArray(d.members) ? d.members : []).slice(0, 12).map((raw) => {
+      const m = (raw ?? {}) as Record<string, unknown>;
+      return { name: clip(m.name, 60), goal: clip(m.goal, 200), deadline: clip(m.deadline, 40), status: clip(m.status, 20), last_proof_at: clip(m.last_proof_at, 40) || null };
+    }).filter((m) => m.name);
+    if (members.length === 0) return json({ error: "The group has no members to talk about yet." }, 400);
+    const limited = await rateLimited(req, env);
+    if (limited) return limited;
+    const out = await createJob(env, baseUrl(env, url), "group", {
+      group_id: clip(d.group_id, 64), members, ...(clip(d.recent_chat, 1500) ? { recent_chat: clip(d.recent_chat, 1500) } : {}), now: new Date().toISOString(),
+    });
+    return json(out.body, out.status);
+  }
+
+  const jm = /^\/api\/jobs\/([^/]+)$/.exec(path);
+  if (jm && req.method === "GET") {
+    if (!UUID.test(jm[1]) || !env.DISPUTES) return json({ error: "Not found" }, 404);
+    const raw = await env.DISPUTES.get(`j:${jm[1]}`);
+    if (!raw) return json({ error: "Not found" }, 404);
+    const { tokenHash: _t, ...view } = JSON.parse(raw) as JobRecord;
+    void _t;
+    return json(view);
   }
 
   const vm = /^\/api\/verifications\/([^/]+)$/.exec(path);
