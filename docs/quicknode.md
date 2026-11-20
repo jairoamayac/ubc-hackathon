@@ -70,9 +70,10 @@ In the QuickNode dashboard (endpoint → Security), before mainnet:
 3. **Separate endpoints** for local/dev, the deployed devnet demo and mainnet.
 4. **Usage alerts** on credits: the app polls, so a runaway loop shows up as a graph, not an invoice.
 5. **Rotate the token** on any leak (the devnet one was pasted in a chat: rotate after the hackathon).
-6. **Priority Fee API**: the add-on must be assigned to the endpoint (Add-ons → Priority Fee API →
-   Endpoint selection); until then `qn_estimatePriorityFees` returns "Method not found" and the app uses
-   the fixed fee.
+6. **Priority Fee API**: the add-on only supports mainnet endpoints (on a devnet endpoint "Endpoint selection"
+   shows no compatible endpoints). On devnet `qn_estimatePriorityFees` returns "Method not found" and the app
+   uses the fixed fee, which is enough without congestion. Turn on "Enable on new endpoints automatically" so the
+   mainnet endpoint gets it; the app picks it up with no code change.
 
 With the plugin's QuickNode MCP connected (`https://mcp.quicknode.com/mcp`), these can be applied from
 Claude Code after explicit confirmation.
