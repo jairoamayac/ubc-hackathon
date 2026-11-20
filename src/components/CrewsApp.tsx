@@ -173,6 +173,16 @@ export default function CrewsApp() {
     };
   }, [client, refresh]);
 
+  // While you look at a round that is being voted on, other people's votes show up within ~8 s, not 45 s.
+  const watching = route.id === "goal" || route.id === "vote" || route.id === "results";
+  useEffect(() => {
+    if (!client || !watching) return;
+    const t = setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, 8_000);
+    return () => clearInterval(t);
+  }, [client, watching, refresh]);
+
   // Load an invited or newly opened group right away.
   useEffect(() => {
     if (!client || !groupKey || details[groupKey]) return;
@@ -310,13 +320,24 @@ export default function CrewsApp() {
         onBack={() => go({ id: "tab", tab: route.join ? "group" : "home" })}
         onAddFunds={() => setSheet({ id: "addFunds" })}
         onLock={async ({ crew: c, goal, stake, minutes, minStake }) => {
+          // Kamino rounds a pot down by a millionth of a dollar each time it comes home, so a stake equal to
+          // the whole free amount can come up short. Keep a 1-cent cushion: move it in when the balance allows,
+          // otherwise lock 1 cent less.
+          const CUSHION = 0.01;
           const freeHere = liveValue(c, snap, now);
-          const short = Math.max(0, Math.ceil((stake - freeHere) * 100) / 100);
+          const need = stake + CUSHION - freeHere;
+          const moveIn = need > 0 ? Math.min(snap.cash, Math.ceil(need * 100) / 100) : 0;
+          const lockUsd = Math.min(stake, Math.floor((freeHere + moveIn - CUSHION) * 100) / 100);
+          const floor = join ? join.stakeUsd : minStake;
+          if (lockUsd < floor) {
+            setToast({ text: `Add a little more money: the minimum here is ${usd(floor)}.`, tone: "err" });
+            return false;
+          }
           const ok = await act("lock", async () => {
-            if (short > 0) await client!.deposit(c.address, short, !!c.me);
-            if (join) await client!.joinWithGoal(c.address, join.challenge.address, goal, stake);
-            else await client!.startCommitment(c.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, stake);
-          }, `Locked ${usd(stake)}. Invite your friends to join.`);
+            if (moveIn > 0) await client!.deposit(c.address, moveIn, !!c.me);
+            if (join) await client!.joinWithGoal(c.address, join.challenge.address, goal, lockUsd);
+            else await client!.startCommitment(c.address, `Pact: ${goal}`.slice(0, 80), minStake, minutes, goal, lockUsd);
+          }, `Locked ${usd(lockUsd)}. Invite your friends to join.`);
           if (ok) {
             setGroupKey(c.address.toBase58());
             go({ id: "tab", tab: "group" });

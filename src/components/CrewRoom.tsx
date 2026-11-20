@@ -2,7 +2,7 @@
 
 // Group tab (members and feed), goal detail, vote and results, wired to the live program.
 // Rules: after the deadline only people with money in the round vote, never on themselves. After the
-// voting window (hm.VOTE_WINDOW_SECS) anything undecided is settled by plurality; a tie or no votes refunds.
+// voting window (hm.VOTE_WINDOW_SECS) anything undecided is kept with more yes than no, otherwise refunded.
 // Money splits come from settle() with FEE_PERCENT (see kept/model.ts).
 import { Check, ChevronRight, Link2, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -331,7 +331,7 @@ export function VoteScreen({ v, owner, now, busy, onBack, onVote, onNext }: {
       )}
       {busy && <Spinner label="Sending your vote" />}
       {e.myVote && next && <button onClick={() => onNext(next.entry.owner.toBase58())} className="btn btn-primary w-full">Next: {next.name}</button>}
-      <p className="text-xs text-muted">Most votes decides. A tie, or no votes by the time voting closes, refunds the stake.</p>
+      <p className="text-xs text-muted">Most of the others decide. Nobody loses money without that majority: if voting closes without one, more yes than no keeps the stake, anything else refunds it.</p>
     </Page>
   );
 }
@@ -352,7 +352,7 @@ export function ResultsScreen({ v, crewName, now, busy, onBack, onVote, onCollec
     return (
       <Page>
         <Header title="Results" onBack={onBack} />
-        <Empty icon="chat-check" title={v.challenge.participants < 2 ? "Nobody else can vote" : "Friends are voting"} body={`${v.challenge.participants < 2 ? "You were the only one in this round, so your stake comes back. " : ""}Voting closes in ${timeLeft(v.challenge.endsAt + hm.VOTE_WINDOW_SECS - now)}. Anything still undecided then is settled by the votes cast, and a tie or no votes refunds.`}>
+        <Empty icon="chat-check" title={v.challenge.participants < 2 ? "Nobody else can vote" : "Friends are voting"} body={`${v.challenge.participants < 2 ? "You were the only one in this round, so your stake comes back. " : ""}Voting closes in ${timeLeft(v.challenge.endsAt + hm.VOTE_WINDOW_SECS - now)}. Nobody loses money without a majority: anything still undecided then is kept with more yes than no, or refunded.`}>
           {toVote.length > 0 && <button onClick={() => onVote(toVote[0].entry.owner.toBase58())} className="btn btn-primary w-full">Vote on {toVote[0].name}</button>}
         </Empty>
         <VoteList v={v} />
@@ -382,7 +382,7 @@ export function ResultsScreen({ v, crewName, now, busy, onBack, onVote, onCollec
             </p>
           </>
         ) : phase === "finalizable" ? (
-          <p className="mt-3 text-sm">Some goals got no clear vote. Settling counts the votes cast; a tie or no votes refunds that stake.</p>
+          <p className="mt-3 text-sm">Some goals got no clear majority. Settling keeps them with more yes than no; anything else is refunded.</p>
         ) : null}
       </section>
 

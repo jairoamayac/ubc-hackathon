@@ -403,7 +403,7 @@ export function claimChallengeIx(owner: PublicKey, crew: PublicKey, challenge: P
     new W().bytes(SOCIAL_IX.claim_challenge).done());
 }
 
-/** After the voting window (social::VOTE_WINDOW_SECS), settles an entry nobody decided: plurality, or a refund. */
+/** After the voting window (social::VOTE_WINDOW_SECS), settles an entry nobody decided: kept with more yes than no, else refunded. */
 export const VOTE_WINDOW_SECS = 120;
 export function finalizeEntryIx(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey) {
   return ix([m(crew), m(challenge, true), m(entryPda(challenge, entryOwner), true)], new W().bytes(SOCIAL_IX.finalize_entry).done());

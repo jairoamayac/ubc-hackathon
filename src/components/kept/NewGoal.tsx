@@ -11,7 +11,7 @@ import { coachGoal } from "@/lib/coach";
 import { GrokCoach } from "../GrokCoach";
 import { usd } from "@/lib/format";
 import { StakePicker } from "../StakePicker";
-import { dateLabel, Header, Icon3D, LockedPill, Page, PreviewBadge, Steps } from "./ui";
+import { dateLabel, Header, Icon3D, LockedPill, Page, Steps } from "./ui";
 import { roundTitle } from "./model";
 
 const CATEGORIES: { id: string; label: string; tone: string; icon: ReactNode; idea: string }[] = [
@@ -86,7 +86,7 @@ export function NewGoal({ groups, crew, join, cash, now, busy, freeIn, onPickGro
             </div>
           </fieldset>
           <section className="rounded-[24px] bg-ink p-5 text-white" aria-labelledby="coach">
-            <p id="coach" className="flex items-center gap-2 text-xs text-[#C9CCC4]"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Grok coach <PreviewBadge /></p>
+            <p id="coach" className="flex items-center gap-2 text-xs text-[#C9CCC4]"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Instant coach</p>
             {!coach ? (
               <>
                 <p className="mt-2 text-sm text-[#C9CCC4]">Make it measurable, so your friends can tell if you kept it.</p>

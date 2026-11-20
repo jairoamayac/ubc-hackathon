@@ -49,7 +49,7 @@ export function StakePicker({ value, onChange, min, max, suggested, label = "How
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
         <button type="button" onClick={() => set(suggested)} aria-pressed={value === suggested} className="flex min-h-9 items-center gap-1.5 rounded-full bg-lilac-tint px-3 font-medium text-violet-deep">
-          <Sparkles className="h-3.5 w-3.5" aria-hidden /> Grok suggests {usd(suggested)}
+          <Sparkles className="h-3.5 w-3.5" aria-hidden /> Suggested {usd(suggested)}
         </button>
         {max !== undefined && <span className="text-muted">You can lock up to {usd(max)} now</span>}
       </div>

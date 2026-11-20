@@ -516,7 +516,7 @@ export class LiveClient {
   }
   /**
    * After the voting window (hm.VOTE_WINDOW_SECS past the deadline), settles every entry nobody decided:
-   * plurality of the votes cast, or a refund on a tie or no votes. Anyone can call it; the sponsor pays.
+   * kept with more yes than no, otherwise refunded (nobody loses without a majority). Anyone can call it; the sponsor pays.
    */
   finalizePending(crew: PublicKey, view: ChallengeView) {
     const pending = view.entries.filter((e) => e.entry.status === hm.ENTRY.PENDING);
