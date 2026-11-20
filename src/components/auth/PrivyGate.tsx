@@ -1,6 +1,6 @@
 "use client";
 
-// Sign-in with Privy: Google or email (one-time code). Privy creates the person's Solana account on
+// Sign-in with Privy: email (one-time code). Privy creates the person's Solana account on
 // first sign-in; the app never shows it. Docs used:
 //  - Setup / PrivyProvider: https://docs.privy.io/basics/react/setup
 //  - Automatic account creation: https://docs.privy.io/basics/react/advanced/automatic-wallet-creation
@@ -45,7 +45,7 @@ export default function PrivyGate({ children }: { children: ReactNode }) {
       appId={PRIVY_APP_ID}
       clientId={PRIVY_CLIENT_ID || undefined}
       config={{
-        loginMethods: ["google", "email"],
+        loginMethods: ["email"],
         appearance: { theme: "light", accentColor: "#2e2260", walletChainType: "solana-only", showWalletLoginFirst: false },
         embeddedWallets: { solana: { createOnLogin: "users-without-wallets" }, showWalletUIs: false },
       }}
@@ -61,7 +61,7 @@ const KEY_PROFILE = "hm.profile"; // the name last saved for this account
 const KEY_OWNER = "hm.owner"; // which account hm.name / hm.profile belong to
 
 function displayName(user: User | null): string {
-  const raw = user?.google?.name || user?.email?.address?.split("@")[0] || user?.google?.email?.split("@")[0] || "";
+  const raw = user?.email?.address?.split("@")[0] || "";
   const first = raw.trim().split(/\s+/)[0] ?? "";
   return (first || "Friend").slice(0, 20);
 }
@@ -100,7 +100,7 @@ function Session({ children }: { children: ReactNode }) {
     });
   }, [ready, authenticated, walletsReady, wallet, createWallet]);
 
-  // The rest of the app reads the name from localStorage ("hm.name"); fill it from Google or email once
+  // The rest of the app reads the name from localStorage ("hm.name"); fill it from the email once
   // per account, and forget the old account's saved name if someone else signs in on this device.
   // Idempotent, so it is safe to run more than once.
   const started = useMemo(() => {
@@ -135,7 +135,6 @@ function Session({ children }: { children: ReactNode }) {
           onDone={() => {}}
           signIn={{
             error,
-            onGoogle: () => { setError(""); login({ loginMethods: ["google"] }); },
             onEmail: () => { setError(""); login({ loginMethods: ["email"] }); },
           }}
         />
