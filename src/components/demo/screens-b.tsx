@@ -157,7 +157,7 @@ export function FeedScreen({ s, d, go }: ScreenProps) {
           <div key={m.id} className="space-y-2">
             <ChatBubble from={m.from} text={m.text} mine={m.from === "martin"} />
             {m.kind === "proof" && m.from === "martin" && (
-              <div className="card ml-9 max-w-[82%] space-y-3 p-3">
+              <div className="card ml-auto mr-9 max-w-[82%] space-y-3 p-3">
                 <ProofImage />
                 <VoteBar approve={s.votes.approve.length} dispute={s.votes.dispute.length} total={total} />
                 {s.stage === "proof" && <p className="text-xs text-muted">Waiting for your friends. You can&apos;t vote on your own proof.</p>}
@@ -395,7 +395,7 @@ export function ResultsScreen({ s, d, go }: ScreenProps) {
           <ul className="space-y-3">
             {r.payouts.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-2"><Avatar id={p.id as never} size={30} /><span className="min-w-0"><span className="block truncate font-medium">{p.id === "martin" ? "You" : NAMES[p.id as keyof typeof NAMES]}</span><span className="mono block text-xs text-muted">{whole(p.stake)} stake</span></span></span>
+                <span className="flex min-w-0 items-center gap-2"><Avatar id={p.id as never} size={28} /><span className="min-w-0"><span className="block truncate font-medium">{p.id === "martin" ? "You" : NAMES[p.id as keyof typeof NAMES]}</span><span className="block whitespace-nowrap text-xs text-muted">{whole(p.stake)} stake</span></span></span>
                 <span className={`pill min-h-7 shrink-0 px-2.5 text-xs ${p.kept ? "bg-forest text-white" : "bg-stone text-ink"}`}>{p.kept ? "Kept" : "Missed"}</span>
               </li>
             ))}
