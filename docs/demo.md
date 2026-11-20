@@ -2,13 +2,16 @@
 
 ## For judges (2 minutes, on your phone)
 
-1. Open the demo group: https://house-money-ubc.jairoamayac.workers.dev/?crew=3diKfFoUCuuStkNvsZvwxYumshkZJ4k8SUTTKHYMrUw1
-   Leo, Maya and Josh are already in, with a live commitment ("Gym 3 times this week").
-2. Pick a name, tap **Join and add money**, pay with **Apple Pay** (simulated, test dollars).
-3. **Challenges**: tap **I'm in**, or start your own commitment with a 1-minute deadline.
-4. When time is up, verify each friend: **Did it / Didn't**. Then **Collect**.
+Open https://house-money-ubc.jairoamayac.workers.dev. One welcome, two ways in:
 
-No wallet, no seed phrase, no fees. Every action is a real devnet transaction, sponsored by the app.
+- **Try the demo**: the whole story in 75 seconds, offline (five friends, a disputed proof, the Grok council, the payout). Press **D** or **Demo controls > Play all**.
+- **Get started**: your real account, by email (Privy).
+  1. **Add funds** with Apple Pay (simulated: test dollars, no card charged).
+  2. **New goal**: write it, pick an amount and a deadline (2 min for testing). The money is locked and lent on Kamino while the pact runs.
+  3. **Invite** a friend with the link; they join with their own goal.
+  4. When time is up, vote on each other: **Kept it** or **Didn't**. Then **Collect**.
+
+No wallet, no seed phrase, no fees: every action is a real devnet transaction, sponsored by the app.
 
 ## Pitch (3 minutes, the team's script)
 
@@ -17,14 +20,14 @@ No wallet, no seed phrase, no fees. Every action is a real devnet transaction, s
 | Hook | 20 s | "Raise your hand if you've ever set a goal and quit. Losing hurts about twice as much as winning feels good, yet every habit app tries to motivate us with rewards. We flipped it." | Title slide |
 | Problem | 25 s | "Failing a goal costs nothing. No consequences, no commitment. Reminders don't work. Streaks don't work. Losing something that hurts does." | One line on screen |
 | Solution | 30 s | "Kept: set a goal with your friends, put real money on the line, your friends verify. Hit it and you get your money back plus a share of the people who quit. Miss it and you lose it. It's not betting on others; it's a commitment to yourself." | App home |
-| Demo | 75 s | Sign in, Apple Pay, set "Run 21 km by Sunday", stake $20, friends join with their own goals, deadline, verification, payout. *Appeal with a screenshot reviewed by AI: show only once it's built; until then, say it's next.* | Live app on a phone |
-| Why Solana | 20 s | "The stakes live in a program, not in our bank account. Nobody can run off with the money: not your friends, not us. Rules are code; payouts are instant and almost free." | Explorer: program + a payout transaction |
+| Demo | 75 s | Sign in with email, Apple Pay, set "Run 21 km by Sunday", stake $20, friends join with their own goals, deadline, verification, payout. Dispute → Grok council review (in the demo; live once its keys are set). | Live app or `/demo` on a phone |
+| Why Solana | 20 s | "The stakes live in a program, not in our bank account. Nobody can run off with the money: not your friends, not us. While a pact runs, the pot earns real interest on Kamino. Rules are code; payouts are instant and almost free." | Explorer: program + a payout transaction |
 | Business + close | 20 s | "When someone walks away, 95% of their money goes to the friends who kept their word, and we keep 5%. Next: Strava, Screen Time and Apple Health, so proof is automatic. Promises that keep themselves." | Closing slide |
 
 Likely questions:
 - *Why does the platform take money?* Our incentive is growth: we earn more when more people join and complete.
 - *Is this gambling?* No element of chance: you stake on your own behaviour, which you control.
-- *What if friends collude?* Only people who put money in can confirm, nobody confirms themselves, and a strict majority decides. Appeals with proof reviewed by AI come next; we say so openly.
+- *What if friends collude?* Only people who put money in can confirm, nobody confirms themselves, a strict majority of the others decides, and nobody loses money without that majority. Disputes are recorded on-chain and reviewed by the Grok council. Invite-only groups come next.
 - *Who holds the money?* The program. Not us, not your friends.
 
 ## Running a group alone (testing or recording)
@@ -38,4 +41,4 @@ CREW="Saturday Squad" MINUTES=10 APP_URL=https://house-money-ubc.jairoamayac.wor
 FAIL=Josh RPC_URL=https://api.devnet.solana.com node scripts/demo-act.mts <crewAddress>
 ```
 
-The friends' keys are saved in `keys/demo-devnet.json` (git-ignored). `demo-seed` also creates a yes/no bet from the earlier concept; the app will hide bets (D13).
+The friends' keys are saved in `keys/demo-devnet.json` (git-ignored).

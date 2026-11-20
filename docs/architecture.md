@@ -1,105 +1,114 @@
 # Architecture: Kept
 
-Current as of 20 Nov 2026. The product idea is in [`context.md`](context.md); the reasons behind each choice are in [`decisions.md`](decisions.md).
-
-This document has two parts: what the code does **today**, and what changes to match the chosen idea. Every row in §5 says whether it is built.
+Current as of 20 Nov 2026 (after the audit). The idea is in [`context.md`](context.md), the product rules in
+[`PRODUCT.md`](PRODUCT.md), the reasons in [`decisions.md`](decisions.md), the status of each integration in
+[`integrations.md`](integrations.md).
 
 ## 1. What the user sees vs what runs underneath
 
 | The user sees | Underneath |
 |---|---|
-| Sign in with email | A key created on the device (production: Privy embedded wallet) |
-| "Add money with Apple Pay" | Test dollars (hmUSD, SPL token) sent to the user's account by the app (production: Coinbase Onramp or MoonPay into USDC) |
-| "Put $20 on the line" | Shares of the group pot locked in a commitment account inside a Solana program |
-| "Your friends verify" | One vote per participant, recorded by the program; a strict majority decides |
-| "Appeal with a screenshot" | An AI review whose decision the program records (planned, §5) |
-| "You got $27 back" | The program moves shares to the people who did it; no one signs a payout by hand |
-| No fees, no SOL | The app sponsors every network fee |
+| Sign in with email | Privy creates the person's Solana account and signs every action for them |
+| Add money with Apple Pay | Simulated today: test dollars (hmUSD, an SPL token) from the sponsor. Next: Crossmint Onramp into USDC |
+| Put $20 on the line | Shares of the group pot locked in the person's Entry inside the Kept program |
+| Your money is safe while the pact runs | The pot is lent on Kamino Lend and earns interest; the program owns the position |
+| Your friends verify | One vote per participant, recorded by the program; a strict majority of the others decides |
+| Disagree with a result | `open_dispute` records it on-chain; a QuickNode Stream sends it to the Grok council for review |
+| You got $32.67 back | The program pays stake + share of 95% of what was left behind; 5% to Kept, taken once |
+| No fees, no SOL | A Cloudflare Worker pays every network fee |
 
 ## 2. Containers
 
 ```mermaid
 flowchart LR
-  P[Phone browser<br/>Next.js app] -- reads accounts, submits signed tx --> RPC[(Solana devnet RPC)]
-  P -- /api/topup, /api/sponsor --> W[Cloudflare Worker<br/>vets + co-signs as fee payer]
-  W -- signed tx --> P
-  P -. planned: /api/appeal + screenshot .-> AI[AI reviewer<br/>Worker + vision model]
-  AI -. planned: resolve_appeal tx .-> RPC
-  RPC --> PRG[house_money program<br/>9iBNS61W…]
-  PRG --> V[(Token vaults<br/>group pots · yield reserve)]
+  P[Phone browser<br/>Next.js app] -- sign in --> PV[Privy<br/>email, embedded account]
+  P -- /api/rpc --> W[Cloudflare Worker]
+  P -- /api/sponsor, /api/topup --> W
+  W -- reads, sends, simulates --> QN[(QuickNode<br/>Solana devnet)]
+  P -. fallback .-> RPC[(public devnet RPC)]
+  QN --> PRG[Kept program<br/>7nqWXrf9…]
+  PRG -- CPI supply / redeem --> K[Kamino Lend<br/>hmUSD reserve]
+  PRG -- KEPT:DisputeOpened log --> ST[QuickNode Stream]
+  ST -- signed webhook --> W
+  W -- /api/appeal, coach, verify --> G[Grok Bot]
+  G -- verdict --> W
 ```
 
-- The Worker only signs; the phone submits (public devnet RPCs block datacenter IPs).
-- The Worker co-signs only our program's instructions, never as an owner, and caps priority fees.
+- **Worker routes** (`worker/index.ts`, `worker/grok.ts`, `worker/quicknode.ts`): `/api/config`, `/api/rpc`
+  (QuickNode proxy), `/api/sponsor` (co-sign as fee payer), `/api/topup` (simulated Apple Pay), Grok routes,
+  `/api/streams/quicknode`.
+- **The sponsor signs only** the app's own Kept instructions, with one compute limit ≤ 400k CU, a priority fee
+  ≤ 1,000,000 µlamports/CU, never as an owner, after a passing simulation on QuickNode. Rate-limited per IP and
+  account.
+- **The RPC proxy** forwards an allowlist of methods, re-serialized, with timeouts; `sendTransaction` only for
+  sponsor-paid transactions. The browser never sees the QuickNode token.
 
-## 3. Program today (deployed on devnet)
+## 3. Program (devnet `7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1`)
 
 | Account | Seeds | Holds |
 |---|---|---|
-| Crew (the friend group) | `crew, creator, crew_id` | name, emoji, total shares, total principal, members |
-| Crew vault | `crew_vault, crew` | the group's dollars (authority: the crew PDA) |
-| Member | `member, crew, owner` | shares, principal |
+| Crew (the group) | `crew, creator, crew_id` | name, total shares, members, Kamino principal and cTokens |
+| Crew vault | `crew_vault, crew` | the group's idle dollars (authority: the crew PDA) |
+| Member | `member, crew, owner` | free shares, principal |
 | Profile | `profile, owner` | display name |
-| Challenge (the commitment) | `challenge, crew, challenge_id` | title, stake, deadline, participants, decided, passed/failed shares |
-| Entry (one person's stake) | `entry, challenge, owner` | locked shares, pass/fail votes, status, claimed |
+| Challenge (the pact) | `challenge, crew, challenge_id` | title, minimum stake, deadline, participants, decided, passed/failed shares |
+| Entry | `entry, challenge, owner` | locked shares, votes, status, claimed |
+| GoalNote | `goal, entry` | the person's own goal (≤ 80 chars) |
 | Vote | `vote, entry, voter` | one per voter per entry |
-| Config, yield reserve | `config`, `yield_vault` | rate, demo time warp; interest source |
+| Dispute | `dispute, entry` | who disputed, why; one per entry |
+| FeeTaken, house vault | `fee, challenge`, `house_vault` | the 5%, moved once |
+| Config | `config` | admin (= Kamino operator), mint, Kamino reserve |
 
-Also in the program, not part of this product: `Bet`/`Position` (yes/no bets on events) and the legacy SOL up/down calls. They pass their tests but are hidden from the pitch (see D13).
+**Kamino** (`kamino.rs`): `kamino_supply` (operator only; the app always supplies the whole vault) and
+`kamino_redeem` (anyone) move a pot's own dollars between its vault and cTokens owned by its PDA. Shares are
+never priced while money is in Kamino (`KaminoNotRedeemed`), so the app wraps every priced action as
+`[refresh, redeem, action, refresh, supply(0)]`: interest lands, the action runs at the exact price, the pot goes
+back to work. Amounts under $0.01 stay in the vault.
 
-Flow today: create the commitment (title, stake, deadline) → friends `join_challenge` (same stake each) → after the deadline any **crew member** except the person votes `Did it / Didn't` → strict majority decides → once every entry is decided, each claims: those who did it get their stake plus a pro-rata share of **100%** of the forfeits; if nobody did it, everyone is refunded.
+**Turned off after the audit:** yes/no bets (`create_bet`) and the SOL up/down calls (`open_call`) return
+`Disabled`. Existing bets can still be voted and claimed.
 
-## 4. Commitment lifecycle (target)
+## 4. Pact lifecycle
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Open: create commitment
-  Open --> Open: friend joins with own goal + stake
-  Open --> Verifying: deadline
-  Verifying --> Did: majority of other participants say yes
-  Verifying --> Failed: majority say no
-  Failed --> Appealed: owner uploads proof (within window)
-  Appealed --> Did: AI accepts proof
-  Appealed --> Failed: AI rejects proof
-  Did --> Settled
-  Failed --> Settled: appeal window closes
-  Settled --> [*]: claim (stake + 95% of forfeits pro rata; 5% to platform via take_fee)
+  [*] --> Open: create pact + lock your own goal and stake
+  Open --> Open: friends join with their own goal and stake
+  Open --> Voting: deadline
+  Voting --> Kept: strict majority of the other participants say yes
+  Voting --> Missed: strict majority say no
+  Voting --> Undecided: window closes (120 s on devnet)
+  Undecided --> Kept: more yes than no
+  Undecided --> Refunded: anything else (nobody loses without a majority)
+  Kept --> Settled
+  Missed --> Settled
+  Refunded --> Settled
+  Settled --> [*]: collect (stake + share of 95% of forfeits; 5% to Kept once; refund if nobody kept it)
 ```
 
-## 5. Status of each piece
+A dispute (`open_dispute`) can be opened by any participant once the pact has ended, on any entry not yet
+collected (one per entry). It is advisory: it starts the Grok review but never moves money by itself.
 
-| # | Change | Program | App | Status |
-|---|---|---|---|---|
-| 1 | Each person states **their own goal** and **their own stake** when joining | `join_with_goal(goal, stake)`; goal stored in a `GoalNote` PDA (≤ 80 chars); stake ≥ the pact's minimum | goal and amount in the lock sheet | **Built** |
-| 2 | **Only people who put money in confirm** | `vote_entry` takes the voter's own Entry (seeds `entry, challenge, voter`); majority of the other participants | confirm buttons only for participants | **Built** |
-| 3 | **Forfeits: 95% to those who kept their word, 5% to the platform** | `PLATFORM_FEE_BPS = 500`; `take_fee` moves the 5% to the config-owned treasury once (`FeeTaken` PDA); `claim_challenge` pays stake + pro-rata share of 95% | result card shows the split; the first collect also takes the fee | **Built** |
-| 4 | **Appeal with proof, reviewed by AI, recorded on-chain** | `appeal(evidence_hash)` by the person within a window; `resolve_appeal(accepted)` signed only by the configured arbiter key; event with the decision | upload screenshot; show "AI reviewed: accepted / rejected" | To build (AI review simulated in the demo, per the team's plan) |
-| 5 | Claims wait until appeals close | `claim` requires all entries settled and no open appeals | — | To build |
-| 6 | **Hide yes/no bets** in the app | — | removed | **Built** |
-| 7 | Email login | — | Privy embedded wallet | Not in the hackathon build |
-| 8 | Automatic proof (Strava, Screen Time, Apple Health) | — | integrations | Next |
-| 9 | Locked deposits earn | already: stakes are pot shares, so they keep earning while locked | show "earning while on the line" | Built |
-| 10 | Sponsored fees, Apple Pay (simulated), invite links, names | — | — | Built |
+## 5. Invariants (tested)
 
-## 6. Invariants
+1. Shares are the only claim on a pot; value = shares × assets / total shares, with a virtual offset.
+2. Every token movement is signed by a PDA; no admin can move member funds out of a pot.
+3. Shares can't be priced while money is in Kamino; the price after a redeem is exact.
+4. One vote per voter per entry; nobody votes on themselves; only participants vote.
+5. Nobody loses a stake without a strict majority of the other participants.
+6. The platform takes exactly 5% of forfeits, once, only if someone kept their word; if nobody did, all refunded.
 
-Tested today (`cargo test` 8, `scripts/e2e.mts` 15, `scripts/social-e2e.mts` 14, Solana MCP `program_autofixer` 0 issues):
+Tests: `cargo test` 12; on devnet `kept-e2e` 10/10, `kamino-e2e` 7/7, `dispute-e2e` 10/10, `app-e2e` 6/6,
+`worker-security` 32/32 (see `audit-2026-11-20.md`).
 
-1. Shares are the only claim on a pot; value = shares × vault / total_shares (virtual offset against inflation).
-2. Every token movement is signed by a PDA; no admin can move member funds.
-3. Shares are conserved through stake, vote and claim (rounding dust stays locked).
-4. One vote per voter per entry; nobody votes on their own entry; a strict majority is final.
-5. If nobody completed, everyone is refunded.
-
-Added and tested (`kept-e2e.mts` 9/9): only participants vote; the platform cut is exactly 5% of the forfeits, only if someone kept their word, taken once. Still to add: only the arbiter key can resolve an appeal, once, for an entry marked failed that appealed in time; a default outcome when nobody confirms.
-
-## 7. Trust model
+## 6. Trust model
 
 | Party | Can | Can't |
 |---|---|---|
-| Participant | stake, vote on others, appeal their own result, withdraw unlocked money | vote on themselves, vote twice, move others' money |
-| Group majority (participants) | decide each result | take money from people who didn't stake |
-| AI arbiter (planned) | accept or reject one appeal | touch funds directly; overrule a "did it" result |
-| Platform | receive its fee share of forfeits | take stakes of people who did it; hold deposits outside the program |
-| Sponsor (fee payer) | pay network fees and rent | appear as owner, sign foreign instructions, exceed the fee cap |
-| Upgrade authority (devnet) | upgrade the program | in production: multisig or freeze |
+| Participant | stake, vote on others, dispute, withdraw free money | vote on themselves or twice, move others' money |
+| Group (participants) | decide each result by strict majority | take money without a majority |
+| Grok council | review disputes and goals, advise | move money (verdicts are advisory) |
+| Platform | receive 5% of forfeits | take stakes of people who kept their word |
+| Sponsor (fee payer, Kamino operator) | pay fees and rent; move a pot's whole vault into its own Kamino position | act as an owner, sign foreign instructions, exceed the fee cap |
+| Kamino market owner (devnet: the team) | change the reserve | — trust assumption; mainnet uses Kamino's main market |
+| Upgrade authority (devnet) | upgrade the program | production: multisig or freeze |

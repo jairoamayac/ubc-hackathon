@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-house_money = "9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht"
+house_money = "7nqWXrf9A6WwNxDJ3x1qH6UnCJs1o7iEHtRix7mnDQt1"
 
 [provider]
 cluster = "devnet"

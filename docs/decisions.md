@@ -28,15 +28,37 @@ A Cloudflare Worker co-signs as fee payer and returns the signed transaction; th
 The top-up sends test dollars. Real Apple Pay needs an on-ramp; Coinbase's own docs say its Apple Pay guest checkout was deprecated on 30 Jun 2026, so the production path needs checking.
 
 ### D8. Brand: the team's kit
-"Forest" palette, Inter 400/500, the dot and the "Locked" pill, no emoji, gradients or shadows, short sentence-case copy, no promises of returns. Name in one constant (`src/lib/brand.ts`).
+"Lila y mandarina" (docs/brand/kept-lila): lilac and mandarin, Inter 400–800, 3D icons, the pinky-promise logo, short sentence-case copy, no crypto jargon, no promises of returns. Name in one constant (`src/lib/brand.ts`). (The first kit, "Forest", is superseded.)
 
 ### D9. Never delete; archive
 Earlier iterations live in `archive/`. On-chain accounts can't be deleted; test groups are prefixed `[test]` and hidden.
 
+### D10. Real yield through Kamino Lend (20 Nov)
+Locked pots are lent on Kamino Lend through CPI and earn real interest instead of a simulated rate. Shares are only priced with the pot home: every money action redeems, acts at the exact price and re-lends in one transaction, so a late joiner never gets interest earned by others (audit H3 of the first review). Anyone can bring a pot home; only the operator lends it.
+
+### D11. QuickNode as the private RPC, behind the Worker (20 Nov)
+The app talks to `/api/rpc`; the Worker forwards an allowlist of methods to QuickNode with timeouts and the public RPC as fallback. The token never reaches the browser. QuickNode also simulates every sponsored transaction before the sponsor signs.
+
+### D12. Sign-in with Privy, email only (20 Nov)
+Privy creates and holds each person's Solana account and signs for them; the sponsor still pays fees. If Privy can't start, the app says so instead of falling back to a hidden device key (audit).
+
+### D13. Bets and tryhard calls off (20 Nov)
+They were not in the app and opened attacks (stakes locked forever, a free option paid from the fee treasury). `create_bet` and `open_call` now return `Disabled`.
+
+### D14. Nobody loses money without a majority (20 Nov)
+After the voting window, an undecided entry is kept if it has more yes than no votes, otherwise refunded. A lone "no" can't take a stake (audit, contract H1).
+
+### D15. One entry for the app and the demo (20 Nov)
+One welcome screen: "Get started" signs in to your real account, "Try the demo" opens the offline walkthrough on Home. Both share the v5 design.
+
+### D16. Disputes are recorded on-chain and advisory (20 Nov)
+`open_dispute` (PR #14) records who disputed which entry and why, and emits `KEPT:DisputeOpened`, which a QuickNode Stream forwards to the Grok council. A verdict never moves money by itself.
+
 ### Not decided yet
-- Appeal with proof reviewed by AI, and who signs its result.
-- Default outcome when nobody confirms before a timeout.
-- Whether yield on locked money is platform revenue (team plan) or stays with users (current code).
+- Invite-only joining (the creator signs, or an invite code), so fake members can't form a majority.
+- Which on-ramp goes to production (plan: Crossmint, `apple-pay-plan.md`) and the move from hmUSD to USDC.
+- Whether yield on locked money is platform revenue or stays with users (today it stays in the pot).
+- Kamino's main market on mainnet, with partial redeems.
 
 ---
 

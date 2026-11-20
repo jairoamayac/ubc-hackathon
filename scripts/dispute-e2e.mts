@@ -1,6 +1,6 @@
 // End-to-end checks of `open_dispute` on a real cluster (local validator or devnet):
 // who may open one, when, once per entry, the KEPT:DisputeOpened log, and that settlement is unaffected.
-//   RPC_URL=http://127.0.0.1:8899 node scripts/dispute-e2e.mts     (run scripts/e2e.mts first: it sets up mint + config)
+//   RPC_URL=http://127.0.0.1:8999 npx jiti scripts/dispute-e2e.mts   (after kamino-local-market.sh and kamino-e2e.mts: mint + config)
 // On devnet pass SPONSOR as the funded fee payer key in keys/sponsor.json (same as the other scripts).
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -14,7 +14,7 @@ const RPC = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 const conn = new Connection(RPC, "confirmed");
 const cluster = RPC.includes("127.0.0.1") || RPC.includes("localhost") ? "local" : "devnet";
 const sponsor = loadOrCreate("sponsor");
-const state = JSON.parse(fs.readFileSync(new URL(`../keys/${process.env.STATE_FILE ?? `${cluster}.json`}`, import.meta.url), "utf8"));
+const state = JSON.parse(fs.readFileSync(new URL(`../keys/${process.env.STATE_FILE ?? (cluster === "local" ? "kamino-local.json" : `${cluster}.json`)}`, import.meta.url), "utf8"));
 const mint = new PublicKey(state.mint);
 const sponsorAta = getAssociatedTokenAddressSync(mint, sponsor.publicKey);
 const WAIT = Number(process.env.WAIT_SECONDS ?? 8);

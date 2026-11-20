@@ -1,6 +1,6 @@
 // End-to-end checks of Kept on a real cluster:
 // own goal + own stake, only participants verify, 95% of forfeits to those who did it, 5% to the platform once.
-//   RPC_URL=http://127.0.0.1:8899 node scripts/kept-e2e.mts      (run scripts/e2e.mts first: it sets up mint + config)
+//   RPC_URL=http://127.0.0.1:8999 npx jiti scripts/kept-e2e.mts   (after kamino-local-market.sh and kamino-e2e.mts: mint + config)
 //   KEEP_OPEN=1 leaves a second, funded pact escrow on-chain; on devnet the run writes docs/devnet-proof.md.
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
@@ -12,7 +12,7 @@ const RPC = process.env.RPC_URL ?? "http://127.0.0.1:8899";
 const conn = new Connection(RPC, "confirmed");
 const cluster = RPC.includes("127.0.0.1") || RPC.includes("localhost") ? "local" : "devnet";
 const sponsor = loadOrCreate("sponsor");
-const state = JSON.parse(fs.readFileSync(new URL(`../keys/${process.env.STATE_FILE ?? `${cluster}.json`}`, import.meta.url), "utf8"));
+const state = JSON.parse(fs.readFileSync(new URL(`../keys/${process.env.STATE_FILE ?? (cluster === "local" ? "kamino-local.json" : `${cluster}.json`)}`, import.meta.url), "utf8"));
 const mint = new PublicKey(state.mint);
 const sponsorAta = getAssociatedTokenAddressSync(mint, sponsor.publicKey);
 const WAIT = Number(process.env.WAIT_SECONDS ?? 8);
