@@ -483,11 +483,7 @@ export function ProfileScreen({ s, d }: Pick<ScreenProps, "s" | "d">) {
             {[25, 50, 100].map((v) => <button key={v} onClick={() => setAmount(v)} aria-pressed={amount === v} className="tile min-h-12 font-medium">${v}</button>)}
           </div>
           {sheet === "add" ? (
-            <div className="mt-4 space-y-2">
-              <button onClick={() => { d({ type: "addFunds", amount }); setSheet(null); }} className="btn btn-ink w-full rounded-full bg-black py-4 text-lg text-white">Add {usd(amount)} with Pay</button>
-              <button onClick={() => { d({ type: "addFunds", amount }); setSheet(null); }} className="btn btn-quiet w-full py-4">Add {usd(amount)} with card</button>
-              <p className="text-xs text-muted">Both are simulated. <DemoBadge /></p>
-            </div>
+            <ApplePayFlow amount={amount} onPaid={() => { d({ type: "addFunds", amount }); setSheet(null); }} />
           ) : (
             <div className="mt-4 space-y-2">
               <button disabled={amount > s.balance} onClick={() => setSheet(null)} className="btn btn-primary w-full py-4">{amount > s.balance ? "Not enough free money" : `Withdraw ${usd(amount)}`}</button>
@@ -497,5 +493,55 @@ export function ProfileScreen({ s, d }: Pick<ScreenProps, "s" | "d">) {
         </Sheet>
       )}
     </ScreenBody>
+  );
+}
+
+/** Apple logo for the Apple Pay button (Apple's merchant button guidelines). */
+function AppleLogo({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 17 20" aria-hidden className={className} fill="currentColor">
+      <path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.1zM11.5 3c.7-.9 1.2-2 1.1-3.2-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.1 1.1.1 2.3-.6 3-1.5z" />
+    </svg>
+  );
+}
+
+/** Add funds: Apple Pay through Crossmint. Button, then the payment sheet with Face ID, then done. */
+function ApplePayFlow({ amount, onPaid }: { amount: number; onPaid: () => void }) {
+  const [phase, setPhase] = useState<"ready" | "sheet" | "faceid" | "done">("ready");
+  useEffect(() => {
+    if (phase === "faceid") { const t = setTimeout(() => setPhase("done"), 1400); return () => clearTimeout(t); }
+    if (phase === "done") { const t = setTimeout(onPaid, 1100); return () => clearTimeout(t); }
+  }, [phase, onPaid]);
+  if (phase === "ready") {
+    return (
+      <div className="mt-4 space-y-3">
+        <button onClick={() => setPhase("sheet")} aria-label={`Pay ${usd(amount)} with Apple Pay`} className="flex h-14 w-full items-center justify-center gap-1.5 rounded-full bg-black text-[21px] font-medium text-white">
+          <AppleLogo className="mb-1 h-6 w-5" /> Pay
+        </button>
+        <p className="text-center text-xs text-muted">Apple Pay or a card. Payments by Crossmint, dollars arrive as USDC.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="enter mt-4 rounded-[22px] bg-[#f2f2f7] p-4 text-ink" role="status" aria-live="polite">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1 text-lg font-semibold"><AppleLogo className="mb-0.5 h-5 w-4" /> Pay</span>
+        <span className="text-sm text-muted">Crossmint</span>
+      </div>
+      <div className="mt-3 divide-y divide-black/10 rounded-2xl bg-white px-4 text-sm">
+        <p className="flex justify-between py-3"><span className="text-muted">Card</span><span>Visa ···· 4242</span></p>
+        <p className="flex justify-between py-3"><span className="text-muted">Pay Kept</span><span className="text-lg font-semibold tabular-nums">{usd(amount)}</span></p>
+      </div>
+      {phase === "sheet" ? (
+        <button onClick={() => setPhase("faceid")} className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-black text-base font-medium text-white">Confirm with Face ID</button>
+      ) : (
+        <div className="mt-4 flex flex-col items-center gap-2 py-1">
+          <span className={`flex h-14 w-14 items-center justify-center rounded-full border-[3px] transition-colors duration-500 ${phase === "done" ? "border-forest bg-forest text-white" : "animate-pulse border-[#0a84ff] text-[#0a84ff]"}`}>
+            {phase === "done" ? <Check className="h-7 w-7" aria-hidden /> : <Loader2 className="h-6 w-6 animate-spin" aria-hidden />}
+          </span>
+          <span className="text-sm font-medium">{phase === "done" ? "Done" : "Face ID"}</span>
+        </div>
+      )}
+    </div>
   );
 }

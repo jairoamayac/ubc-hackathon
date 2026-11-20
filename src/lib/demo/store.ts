@@ -81,7 +81,7 @@ export const initial = (): DemoState => ({
   disputeReason: "",
   proofNote: "",
   messages: [],
-  history: [{ id: 1, text: "Added funds (simulated)", amount: START_BALANCE }],
+  history: [{ id: 1, text: "Added with Apple Pay", amount: START_BALANCE }],
   fundsAdded: 0,
   collected: false,
   myVote: null,
@@ -232,7 +232,7 @@ export function reducer(s: DemoState, a: Action): DemoState {
         ...s,
         balance: s.balance + a.amount,
         fundsAdded: s.fundsAdded + a.amount,
-        history: [{ id: s.nextId, text: "Added funds (simulated)", amount: a.amount }, ...s.history],
+        history: [{ id: s.nextId, text: "Added with Apple Pay", amount: a.amount }, ...s.history],
         nextId: s.nextId + 1,
       };
   }

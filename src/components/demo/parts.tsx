@@ -4,6 +4,7 @@
 // verdict card, lock animation, 3D icons. Brand: "Lila y mandarina" (docs/brand/kept-lila/kept-brand.md).
 import { ArrowLeft, Check, Home, Loader2, Lock, MessageCircle, User, Users, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { YIELD_APY_PERCENT } from "@/lib/brand";
 import { NAMES, type PersonId, type Status } from "@/lib/demo/store";
 
@@ -282,7 +283,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
       before?.focus?.();
     };
   }, []);
-  return (
+  // Portal to <body>: an animated (transformed) screen would otherwise trap the sheet under the bottom bar.
+  return createPortal(
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-deep/40" onClick={onClose}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabIndex={-1} className="enter max-h-[92dvh] w-full max-w-[440px] overflow-y-auto rounded-t-[28px] bg-paper p-6 pb-8 outline-none" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -291,7 +293,8 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
