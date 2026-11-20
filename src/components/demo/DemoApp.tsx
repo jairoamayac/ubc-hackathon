@@ -80,6 +80,8 @@ function routeAfter(a: Action): Route | null {
 
 const DEMO_EMAIL = "martin@example.com";
 
+const PLAY_STEP_MS = 5_000;
+
 export default function DemoApp() {
   const [s, d] = useReducer(reducer, undefined, initial);
   // The demo opens straight on Home: the one welcome and sign-in screen is the live app's (/).
@@ -128,16 +130,21 @@ export default function DemoApp() {
     return () => clearTimeout(t);
   }, [s.stage, s.disputeStep]);
 
-  // Play all: one step every 1.4 s until it is your turn or the story ends.
+  // Play all: the first step right away, then one step every 5 s so a screen can be read before it changes,
+  // until it is your turn or the story ends.
   useEffect(() => {
     if (!auto) return;
-    const t = setInterval(() => {
-      const st = sRef.current;
+    const tick = () => {
       // Do not race the appeal timers or the Grok checks.
-      if (st.stage === "appeal") return;
+      if (sRef.current.stage === "appeal") return;
       advance();
-    }, 1400);
-    return () => clearInterval(t);
+    };
+    const first = setTimeout(tick, 700);
+    const t = setInterval(tick, PLAY_STEP_MS);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, [auto, advance]);
 
   // D advances one step, unless you are typing.
@@ -181,22 +188,22 @@ export default function DemoApp() {
       <div className={`sticky bottom-0 z-20 space-y-1.5 px-4 pb-1.5 pt-4 ${route === "login" ? "" : "bg-linear-to-t from-paper via-paper/90 to-transparent"}`}>
         {panel ? (
           <section aria-label="Demo controls" className="rounded-[20px] bg-white p-3 text-sm shadow-[0_12px_28px_rgba(46,34,96,0.18)]">
-            <p className="mono text-xs uppercase tracking-widest text-muted">Demo controls · simulated</p>
+            <p className="mono text-xs uppercase tracking-widest text-ink">Demo controls · simulated</p>
             <p className="mt-1">{describe(next, s)}</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <button onClick={advance} disabled={!next} className="btn btn-ink min-h-10 rounded-xl px-2 text-sm"><SkipForward className="h-4 w-4" aria-hidden /> Next (D)</button>
-              <button onClick={() => setAuto((v) => !v)} disabled={!next && !auto} aria-pressed={auto} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><Play className="h-4 w-4" aria-hidden /> {auto ? "Pause" : "Play all"}</button>
-              <button onClick={reset} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><RotateCcw className="h-4 w-4" aria-hidden /> Reset</button>
+              <button onClick={advance} disabled={!next} className="btn btn-ink min-h-12 rounded-xl px-2 text-sm"><SkipForward className="h-4 w-4" aria-hidden /> Next (D)</button>
+              <button onClick={() => setAuto((v) => !v)} disabled={!next && !auto} aria-pressed={auto} className="btn btn-quiet min-h-12 rounded-xl border border-ink/20 px-2 text-sm"><Play className="h-4 w-4" aria-hidden /> {auto ? "Pause" : "Play all"}</button>
+              <button onClick={reset} className="btn btn-quiet min-h-12 rounded-xl border border-ink/20 px-2 text-sm"><RotateCcw className="h-4 w-4" aria-hidden /> Reset</button>
             </div>
           </section>
         ) : null}
         {showNav && tab && <BottomNav tab={tab} onTab={(t) => setRoute(t === "me" ? "me" : t === "group" ? "group" : "home")} />}
         {/* Tiny hint under the bar: never covers content. D still advances, the panel has Play all. */}
-        <div className={`flex items-center justify-center gap-3 text-[11px] ${route === "login" ? "text-deep/70" : "text-muted"}`}>
-          <button onClick={() => setPanel((v) => !v)} aria-expanded={panel} className="flex h-6 items-center gap-1 rounded-full px-2.5">
-            <span className="mono rounded bg-stone2 px-1 text-[10px] text-muted">D</span> {panel ? "Hide demo controls" : "Demo controls"}
+        <div className={`flex items-center justify-center gap-3 text-xs ${route === "login" ? "text-deep/70" : "text-muted"}`}>
+          <button onClick={() => setPanel((v) => !v)} aria-expanded={panel} className="flex min-h-11 items-center gap-2 rounded-full bg-ink px-4 text-sm font-medium text-white shadow-[0_6px_16px_rgba(46,34,96,0.25)]">
+            <span className="mono rounded bg-white/20 px-1.5 text-xs text-white">D</span> {panel ? "Hide demo controls" : "Demo controls"}
           </button>
-          <Link href="/" className="flex h-6 items-center font-medium underline underline-offset-2">Demo · sign in for real</Link>
+          <Link href="/" className="flex min-h-11 items-center text-sm font-medium underline underline-offset-2">Demo · sign in for real</Link>
         </div>
       </div>
     </Shell>
