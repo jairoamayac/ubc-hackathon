@@ -51,7 +51,7 @@ export function GroupScreen(props: {
   return (
     <Page>
       <header className="flex items-center justify-between gap-3">
-        <h1 className="truncate text-[28px] font-medium leading-tight tracking-tight">{crew.name}</h1>
+        <h1 className="line-clamp-2 min-w-0 break-words text-[26px] font-medium leading-tight tracking-tight">{crew.name}</h1>
         <button onClick={invite} className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-white px-4 text-sm font-medium shadow-[0_8px_22px_rgba(26,26,24,.07)]">
           <Link2 className="h-4 w-4" aria-hidden /> {copied ? "Link copied" : "Invite"}
         </button>
