@@ -2,6 +2,7 @@
 
 // Kept, offline demo: the 75 second path with no backend. Press D (or use "Demo controls") to make the
 // friends act, or "Play all" to run the whole story. Everything is simulated and labeled as such.
+import Link from "next/link";
 import { Play, RotateCcw, SkipForward } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { coachGoal } from "@/lib/coach";
@@ -77,9 +78,12 @@ function routeAfter(a: Action): Route | null {
   }
 }
 
+const DEMO_EMAIL = "martin@example.com";
+
 export default function DemoApp() {
   const [s, d] = useReducer(reducer, undefined, initial);
-  const [route, setRoute] = useState<Route>("login");
+  // The demo opens straight on Home: the one welcome and sign-in screen is the live app's (/).
+  const [route, setRoute] = useState<Route>("home");
   const [panel, setPanel] = useState(false);
   const [auto, setAuto] = useState(false);
   const sRef = useRef(s);
@@ -94,7 +98,10 @@ export default function DemoApp() {
   useEffect(() => {
     const at = new URLSearchParams(location.search).get("at");
     const plan = at ? JUMPS[at] : undefined;
-    if (!plan) return;
+    if (!plan) {
+      d({ type: "signIn", email: DEMO_EMAIL });
+      return;
+    }
     const t = setTimeout(() => {
       for (const a of playTo(plan.until)) d(a);
       setRoute(plan.route);
@@ -150,7 +157,8 @@ export default function DemoApp() {
   const reset = () => {
     setAuto(false);
     d({ type: "reset" });
-    setRoute("login");
+    d({ type: "signIn", email: DEMO_EMAIL });
+    setRoute("home");
   };
 
   let screen;
@@ -184,9 +192,12 @@ export default function DemoApp() {
         ) : null}
         {showNav && tab && <BottomNav tab={tab} onTab={(t) => setRoute(t === "me" ? "me" : t === "group" ? "group" : "home")} />}
         {/* Tiny hint under the bar: never covers content. D still advances, the panel has Play all. */}
-        <button onClick={() => setPanel((v) => !v)} aria-expanded={panel} className={`mx-auto flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] ${route === "login" ? "text-deep/70" : "text-muted"}`}>
-          <span className="mono rounded bg-stone2 px-1 text-[10px] text-muted">D</span> {panel ? "Hide demo controls" : "Demo controls"}
-        </button>
+        <div className={`flex items-center justify-center gap-3 text-[11px] ${route === "login" ? "text-deep/70" : "text-muted"}`}>
+          <button onClick={() => setPanel((v) => !v)} aria-expanded={panel} className="flex h-6 items-center gap-1 rounded-full px-2.5">
+            <span className="mono rounded bg-stone2 px-1 text-[10px] text-muted">D</span> {panel ? "Hide demo controls" : "Demo controls"}
+          </button>
+          <Link href="/" className="flex h-6 items-center font-medium underline underline-offset-2">Demo · sign in for real</Link>
+        </div>
       </div>
     </Shell>
   );
