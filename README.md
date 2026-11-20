@@ -44,7 +44,7 @@ No fees, ever: the app pays every network fee.
 | **QuickNode** | Private RPC behind the Worker; pre-sign simulation; Streams for disputes | Live (RPC and Stream) |
 | **Privy** | Email sign-in, embedded Solana account that signs | Live |
 | **Cloudflare Workers** | Fee sponsor, RPC proxy, Grok routes, rate limits | Live |
-| **Grok Bot** | Goal coach, "Verify with Grok", group check-in, appeals council | Live |
+| **Grok Bot** | Goal coach, "Verify with Grok", group check-in, appeals council | Live ([chat export](docs/grok-bot-chat-export.md)) |
 | **Crossmint** | Apple Pay or card → dollars in the app | Built, staging, on behind a flag ([setup](docs/ONRAMP.md)) |
 
 Details, what's missing and the secrets each one needs: [`docs/integrations.md`](docs/integrations.md).
@@ -77,7 +77,7 @@ independent AI jurors (does the proof meet the goal, is it fraudulent, what do b
 Kleros-style. The verdict and each juror's reasons come back to the group. **The verdict is advisory: it never
 moves money by itself**; the group's vote does. The same routine coaches vague goals into measurable ones,
 nudges the group chat, and verifies public goals (like an X follower count) by reading the data itself.
-Setup: [`docs/quicknode-stream.md`](docs/quicknode-stream.md); rules: [`docs/PRODUCT.md`](docs/PRODUCT.md).
+Setup: [`docs/quicknode-stream.md`](docs/quicknode-stream.md); rules: [`docs/PRODUCT.md`](docs/PRODUCT.md); every run from the live app: [`docs/grok-bot-chat-export.md`](docs/grok-bot-chat-export.md) (8 runs: 3 judge, 4 coach, 1 verify).
 
 ## Verified
 
