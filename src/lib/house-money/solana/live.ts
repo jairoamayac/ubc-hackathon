@@ -374,6 +374,16 @@ export class LiveClient {
   voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
     return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
   }
+  /** Flags someone's result as contested. Moves no money; the program logs it so the appeals court picks it up. */
+  async openDispute(challenge: PublicKey, entryOwner: PublicKey, reason: number = hm.DISPUTE_REASON.APPEAL) {
+    try {
+      return await this.send([hm.openDisputeIx(this.sponsor, this.owner.publicKey, challenge, entryOwner, reason)]);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg.includes("already in use") || msg.includes("already did that")) throw new Error("This result is already contested.");
+      throw e;
+    }
+  }
   /** Collect your result. The first person to collect also moves the platform's 5% (sponsored, once). */
   claimChallenge(crew: PublicKey, challenge: PublicKey, feeTaken: boolean) {
     const ixs = feeTaken ? [] : [hm.takeFeeIx(this.sponsor, this.mint, crew, challenge)];

@@ -366,6 +366,12 @@ pub mod house_money {
     pub fn take_fee(ctx: Context<TakeFee>) -> Result<()> {
         social::take_fee_handler(ctx)
     }
+
+    /// A participant contests one entry of a finished commitment. Logs `KEPT:DisputeOpened ...` and emits
+    /// `DisputeOpened` for off-chain listeners (QuickNode Streams). Moves no money.
+    pub fn open_dispute(ctx: Context<OpenDispute>, reason: u8) -> Result<()> {
+        social::open_dispute_handler(ctx, reason)
+    }
 }
 
 // ---------------------------------------------------------------- helpers
@@ -816,6 +822,8 @@ pub enum HmError {
     NotAParticipant,
     #[msg("Stake below this commitment's minimum.")]
     StakeTooLow,
+    #[msg("Unknown dispute reason.")]
+    BadReason,
 }
 
 #[cfg(test)]

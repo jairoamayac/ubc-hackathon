@@ -36,6 +36,8 @@ export interface AppealRequest {
   proof?: { description?: string };
   /** Optional screenshot as a small data URL (jpeg, png or webp, up to about 700 KB). The Worker serves it back to the Bot by link. */
   image_data_url?: string;
+  /** Optional: the pact member's address, so the on-chain dispute event is matched to this case instead of opening a second one. */
+  member_key?: string;
 }
 
 export type DisputeStatus = "pending" | "decided" | "failed";
@@ -53,6 +55,8 @@ export interface DisputeView {
   evidence_requested?: string | null;
   council?: Juror[];
   tally?: Tally;
+  /** Set when a QuickNode Stream saw the matching dispute on-chain. */
+  onchain?: { signature?: string; slot?: number; blockTime?: number; reason: number };
 }
 
 export type VerifyVerdict = "KEPT" | "MISSED" | "CANNOT_VERIFY";

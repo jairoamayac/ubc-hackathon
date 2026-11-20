@@ -1,0 +1,31 @@
+{
+  "data": [
+    [
+      {
+        "signature": "2NVoGCqopvQ8iJVUtYUpwZpnUQXUgtVkZiWz8mgagujVr5qBRkk2vxy9zZadguK5ajJ9sv7iHyAf7Wrb6ny6MUv7",
+        "slot": 243,
+        "blockTime": 1795181084,
+        "programInvocations": [],
+        "logs": [
+          "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+          "Program ComputeBudget111111111111111111111111111111 success",
+          "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+          "Program ComputeBudget111111111111111111111111111111 success",
+          "Program 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht invoke [1]",
+          "Program log: Instruction: OpenDispute",
+          "Program 11111111111111111111111111111111 invoke [2]",
+          "Program 11111111111111111111111111111111 success",
+          "Program log: KEPT:DisputeOpened challenge=AmJNyuzAddqY4FeMfQXG6jdJSERezAkedM5ygPTxMcon member=CjQ75iyGqQiF66BxUMzq8nof6BML25N4kTd31Mpt1mgz disputer=3rvGGK2zgnRPGrcoubJTUQMWTVbPB7KpEaH49hWsvQHu reason=1 dispute=Ax5THb7FebwSL8b3ixefrMr8y3a6zGEzCxf7657Vsq5d",
+          "Program data: 795m68FVAdaREmNvgMH5aA/p49ceu2LP2Az6xeUDR9tDI0o2JgnFVa5NEy1dmMUIyHnSXPffRb3FxUS39lWNGeYGF4PBcTTPKoEO8I3+9KP/oIW8soQR7WFPpSIU+0abu0SIAnJbiZgBk9UpfvQsSg5M5dkLNWjiwReAom0P8J6lj4le43iNNpw=",
+          "Program 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht consumed 46327 of 119700 compute units",
+          "Program 9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht success"
+        ],
+        "success": true
+      }
+    ]
+  ],
+  "metadata": {
+    "network": "solana-local",
+    "dataset": "programs_with_logs"
+  }
+}

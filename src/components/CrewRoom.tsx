@@ -179,7 +179,10 @@ export function CrewRoom(props: {
                 if (await run("join", () => client.joinWithGoal(crew.address, sheet.pact.challenge.address, goal, stake), `Locked ${usd(stake)} on your goal.`)) setSheet(null);
               }} />
           )}
-          {sheet.id === "appeal" && <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)} />}
+          {sheet.id === "appeal" && (
+            <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)}
+              recordDispute={sheet.pact.mine ? () => client.openDispute(sheet.pact.challenge.address, sheet.pact.mine!.entry.owner) : undefined} />
+          )}
           {sheet.id === "verify" && <VerifySheet pact={sheet.pact} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
