@@ -86,7 +86,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
       <div className="space-y-5 py-2" role="status" aria-live="polite">
         <p className="font-medium">Grok is reviewing your proof</p>
         <Check3 items={STEP_STEPS} step={step} />
-        <p className="text-xs text-muted">Simulated for the demo. <span className="rounded-md bg-stone px-1.5 py-0.5 text-[10px] uppercase tracking-widest">Demo</span></p>
+        <p className="text-xs text-muted">Preview: Grok review is not live yet. Simulated on this device. <span className="rounded-md bg-stone px-1.5 py-0.5 text-[10px] uppercase tracking-widest">Preview</span></p>
       </div>
     );
   }
@@ -98,7 +98,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-forest">
             <ShieldCheck className="h-4 w-4" aria-hidden /> Reviewed by Grok
           </span>
-          <span className="rounded-full border border-stone px-2.5 py-0.5 text-xs text-muted">Demo</span>
+          <span className="rounded-full border border-stone px-2.5 py-0.5 text-xs text-muted">Preview</span>
         </div>
         <div className={`rounded-xl p-4 ${verdict.accepted ? "bg-mint" : "border border-stone"}`}>
           <p className={`text-lg font-medium ${verdict.accepted ? "text-forest" : "text-danger"}`}>{verdict.headline}</p>
@@ -118,7 +118,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
           ))}
         </ul>
         <p className="text-sm text-muted">Next, your group confirms Grok&apos;s proposal. In the real product the decision is recorded together with the result.</p>
-        <p className="text-xs text-muted">Demo only. This verdict is simulated and does not change the result or your money.</p>
+        <p className="text-xs text-muted">Preview only. This verdict is simulated and does not change the result or your money.</p>
         <button onClick={onClose} className="btn btn-quiet w-full">Close</button>
       </div>
     );
@@ -149,7 +149,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
           )}
           {file && <span className="text-xs">{file.name}. Tap to change.</span>}
         </label>
-        <p className="mt-2 text-xs text-muted">In this demo your screenshot stays on this device.</p>
+        <p className="mt-2 text-xs text-muted">In this preview your screenshot stays on this device.</p>
       </div>
 
       <label className="block">
@@ -163,7 +163,7 @@ export function AppealSheet({ pact, onClose }: { pact: ChallengeView; onClose: (
       </label>
 
       <fieldset className="rounded-xl bg-mint p-3">
-        <legend className="px-1 text-xs text-muted">Demo control: the verdict to show</legend>
+        <legend className="px-1 text-xs text-muted">Preview control: the verdict to show</legend>
         <div className="mt-1 grid grid-cols-2 gap-2">
           <button type="button" aria-pressed={demoAccepts} onClick={() => setDemoAccepts(true)} className="tile min-h-11 py-2 text-sm">Accepted</button>
           <button type="button" aria-pressed={!demoAccepts} onClick={() => setDemoAccepts(false)} className="tile min-h-11 py-2 text-sm">Not accepted</button>

@@ -2,19 +2,15 @@
 
 // Small building blocks for the offline demo: shell, nav, avatars, ring, chips, banners, proof image, vote bar,
 // verdict card, lock animation. Brand: Forest. No gradients, no shadows. Two font weights.
-import { ArrowLeft, Check, Home, Loader2, Lock, MessageCircle, User, Users, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Lock, MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
+import { BottomNav as KeptNav } from "../kept/ui";
 import { NAMES, type PersonId, type Status } from "@/lib/demo/store";
 
 export type DemoTab = "home" | "group" | "me";
 
-export function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-[440px] flex-col overflow-hidden bg-paper sm:my-6 sm:min-h-[860px] sm:rounded-2xl sm:border sm:border-stone">
-      <main className="flex flex-1 flex-col">{children}</main>
-    </div>
-  );
-}
+// Same shell and nav as the live app (components/kept/ui), so the demo matches Kept v5.
+export { Shell } from "../kept/ui";
 
 export function ScreenBody({ children }: { children: ReactNode }) {
   return <div className="enter flex flex-1 flex-col gap-4 px-5 pb-4 pt-6">{children}</div>;
@@ -33,26 +29,7 @@ export function DemoBadge({ children = "Demo" }: { children?: ReactNode }) {
 }
 
 export function BottomNav({ tab, onTab }: { tab: DemoTab; onTab: (t: DemoTab) => void }) {
-  const items: { id: DemoTab; label: string; icon: ReactNode }[] = [
-    { id: "home", label: "Home", icon: <Home className="h-5 w-5" aria-hidden /> },
-    { id: "group", label: "Group", icon: <Users className="h-5 w-5" aria-hidden /> },
-    { id: "me", label: "Me", icon: <User className="h-5 w-5" aria-hidden /> },
-  ];
-  return (
-    <nav aria-label="Main" className="sticky bottom-3 mx-4 mt-4 flex justify-around rounded-xl border border-stone bg-paper p-1.5">
-      {items.map((it) => (
-        <button
-          key={it.id}
-          onClick={() => onTab(it.id)}
-          aria-current={tab === it.id ? "page" : undefined}
-          className={`flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-xs transition ${tab === it.id ? "bg-forest text-white" : "text-muted"}`}
-        >
-          {it.icon}
-          {it.label}
-        </button>
-      ))}
-    </nav>
-  );
+  return <KeptNav tab={tab} onTab={onTab} />;
 }
 
 export function Avatar({ id, size = 36 }: { id: PersonId; size?: number }) {
@@ -112,7 +89,7 @@ export function ProgressRing({ percent, label, sub }: { percent: number; label: 
     <div className="relative mx-auto h-36 w-36" role="img" aria-label={`${label}, ${sub}`}>
       <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" aria-hidden>
         <circle cx="60" cy="60" r={r} fill="none" stroke="#E6E4DD" strokeWidth="8" />
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#1F5F4A" strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - p / 100)} style={{ transition: "stroke-dashoffset 500ms ease" }} />
+        <circle cx="60" cy="60" r={r} fill="none" stroke="#2E2260" strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - p / 100)} style={{ transition: "stroke-dashoffset 500ms ease" }} />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
         <span className="text-xl font-medium tabular-nums">{label}</span>
