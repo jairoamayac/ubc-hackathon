@@ -112,7 +112,7 @@ function friendly(msg: string) {
   if (msg.includes("AlreadyDecided")) return "The crew already decided.";
   if (msg.includes("NotDecided")) return "The crew hasn't decided yet.";
   if (msg.includes("AlreadyClaimed")) return "Already collected.";
-  if (msg.includes("NotEnoughShares")) return "Not enough money in this crew. Add more first.";
+  if (msg.includes("NotEnoughShares")) return "You have a little less available than that. Try a slightly smaller amount.";
   if (msg.includes("already in use")) return "You already did that one.";
   if (msg.includes("NotAParticipant") || msg.includes("voter_entry")) return "Only people who put money in can verify.";
   if (msg.includes("StakeTooLow")) return "Put in at least the group's minimum.";
