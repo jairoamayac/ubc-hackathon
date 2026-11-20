@@ -7,7 +7,7 @@ Kept is a commitment app for friend groups. You lock money on your own goal, you
 Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md); the brand rules for agents are in [`docs/branding-kit-agentes.md`](docs/branding-kit-agentes.md).
 
 - **Live demo:** https://house-money-ubc.jairoamayac.workers.dev
-- **Demo group** (open about 12 hours): https://house-money-ubc.jairoamayac.workers.dev/?crew=WUnPRfgz8KsUdFcJBYzPYQM6UpFTKxryKnFQj4NEu8a
+- **Live stack:** program `7nqW…` with Kamino yield, RPC through QuickNode (`/api/rpc`), sign-in with Privy, Grok council routes. `scripts/app-e2e.mts` passes 6/6 against the live URL.
 - **Devnet proof:** [every escrow, pact and payout with explorer links](docs/devnet-proof.md)
 - **Docs:** [why it exists](docs/context.md) · [architecture](docs/architecture.md) · [decisions](docs/decisions.md) · [demo and pitch](docs/demo.md)
 
