@@ -1,6 +1,6 @@
-// End-to-end checks of Burn the Boats on a real cluster:
+// End-to-end checks of Kept on a real cluster:
 // own goal + own stake, only participants verify, 95% of forfeits to those who did it, 5% to the platform once.
-//   RPC_URL=http://127.0.0.1:8899 node scripts/btb-e2e.mts      (run scripts/e2e.mts first: it sets up mint + config)
+//   RPC_URL=http://127.0.0.1:8899 node scripts/kept-e2e.mts      (run scripts/e2e.mts first: it sets up mint + config)
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createAssociatedTokenAccountIdempotentInstruction, createTransferCheckedInstruction, getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
 import fs from "node:fs";
@@ -48,7 +48,7 @@ async function valueOf(crew: PublicKey, owner: PublicKey) {
   return hm.toUsd(hm.assetsForShares(m.shares, c.totalShares, await vaultOf(crew)));
 }
 
-console.log(`Burn the Boats e2e on ${cluster}`);
+console.log(`Kept e2e on ${cluster}`);
 
 // 1. A boat of four friends, $60 each, paid in with "Apple Pay" (sponsor-credited test dollars)
 const [maria, leo, sam, josh] = [Keypair.generate(), Keypair.generate(), Keypair.generate(), Keypair.generate()];
@@ -130,4 +130,4 @@ for (const kp of [maria, leo, sam, josh]) {
 const left = hm.toUsd(await vaultOf(crew));
 assert(left < 0.05, `vault drained except dust (${left})`);
 ok(`everyone withdrew; $${left.toFixed(6)} of rounding dust left in the pot`);
-console.log(`\nAll ${step} Burn the Boats checks passed on ${cluster}.`);
+console.log(`\nAll ${step} Kept checks passed on ${cluster}.`);

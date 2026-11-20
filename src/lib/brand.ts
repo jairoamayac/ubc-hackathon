@@ -1,4 +1,3 @@
-// Single source for the product name. The final name is pending (branding kit §1:
-// candidates Rubicon, Commit, Iacta, Kept, Pacta, Pinky, Plink). Change it here only.
-export const PROJECT_NAME = "Burn the Boats";
+// Single source for the product name (team decision, 20 Nov 2026).
+export const PROJECT_NAME = "Kept";
 export const TAGLINE = "Promises that keep themselves.";

@@ -1,4 +1,4 @@
-// House Money edge API (Cloudflare Worker). Serves the static app plus:
+// Kept edge API (Cloudflare Worker). Serves the static app plus:
 //   GET  /api/config   cluster, mint and sponsor the app should use
 //   POST /api/topup    simulated Apple Pay: returns a sponsor-signed transfer of test dollars (hmUSD)
 //   POST /api/sponsor  vets and co-signs a transaction as fee payer, so people never hold SOL
@@ -111,7 +111,7 @@ function vet(tx: Transaction, sponsor: PublicKey): string | null {
       if (kind === 3 && ix.data.length === 9 && view.getBigUint64(1, true) <= MAX_CU_PRICE) continue;
       return "Priority fee above the sponsor's cap.";
     }
-    if (!ix.programId.equals(PROGRAM_ID)) return "Only House Money instructions can be sponsored.";
+    if (!ix.programId.equals(PROGRAM_ID)) return "Only Kept instructions can be sponsored.";
     const disc = Array.from(ix.data.subarray(0, 8)).join(",");
     for (const [i, k] of ix.keys.entries()) {
       if (k.pubkey.equals(sponsor) && !(i === 0 && PAYER_IXS.has(disc))) return "The sponsor can only pay rent.";

@@ -52,7 +52,7 @@ async function valueOf(crew: PublicKey, owner: PublicKey) {
   return hm.toUsd(hm.assetsForShares(m.shares, c.totalShares, await vaultOf(crew)));
 }
 
-console.log(`House Money social e2e on ${cluster}`);
+console.log(`Kept social e2e on ${cluster}`);
 
 // 1. A crew of four friends with names, each saving $50
 const [ana, leo, maya, josh] = [Keypair.generate(), Keypair.generate(), Keypair.generate(), Keypair.generate()];

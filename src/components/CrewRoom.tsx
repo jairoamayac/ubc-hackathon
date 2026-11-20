@@ -11,7 +11,7 @@ import type { ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "
 import * as hm from "@/lib/house-money/solana/hm";
 import { PROJECT_NAME } from "@/lib/brand";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
-import { usd } from "./ui";
+import { usd } from "@/lib/format";
 
 type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal" };
 

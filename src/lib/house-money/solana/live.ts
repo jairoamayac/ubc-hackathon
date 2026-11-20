@@ -355,7 +355,7 @@ export class LiveClient {
   joinChallenge(crew: PublicKey, challenge: PublicKey) {
     return this.send([hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, challenge)]);
   }
-  /** Burn the Boats: put money on your own goal. */
+  /** Put money on your own goal. */
   joinWithGoal(crew: PublicKey, challenge: PublicKey, goal: string, stakeUsd: number) {
     return this.send([hm.joinWithGoalIx(this.sponsor, this.owner.publicKey, crew, challenge, goal, hm.fromUsd(stakeUsd))]);
   }

@@ -9,7 +9,7 @@ import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/sola
 import { PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
 import { Onboarding } from "./Onboarding";
-import { usd } from "./ui";
+import { usd } from "@/lib/format";
 
 type View = { id: "home" } | { id: "me" } | { id: "new" } | { id: "group"; key: string };
 type Sheet = null | { id: "applepay"; then?: CrewView } | { id: "deposit"; crew: CrewView } | { id: "withdraw"; crew: CrewView };

@@ -1,4 +1,4 @@
-# Burn the Boats: why it exists
+# Kept: why it exists
 
 Working name. Last updated: 20 Nov 2026. Figures carry their source; where sources disagree or something is unverified, it says so.
 
@@ -74,10 +74,6 @@ The user sees none of it: email login, Apple Pay, dollars.
 - **Verification cost:** automatic proof (Strava, Screen Time, Apple Health) is the next step; not in the hackathon build.
 - **Small stakes:** a $20 stake has to hurt enough to matter; we let each person pick.
 
-## 10. Earlier research that still applies
-
-Before choosing this idea we explored no-loss savings (UK Premium Bonds: 22M+ holders; PoolTogether's TVL fell from $236M to ~$7M without a social layer) and social prediction among friends (JuryDuty and many ETHGlobal projects). Two lessons carried over: money only motivates when it's tied to a group moment, and custody has to be trustless.
-
 ## Sources
 
 - Loss aversion: [summary of estimates and meta-analyses](https://healthcare-economist.com/2024/06/26/empirical-estimates-of-loss-aversion) (Tversky & Kahneman 1992; Brown et al. 2024; Walasek, Mullett & Stewart 2024)
@@ -85,4 +81,3 @@ Before choosing this idea we explored no-loss savings (UK Premium Bonds: 22M+ ho
 - Competitors: [Forfeit](https://www.forfeit.app/), [Goals](https://ethglobal.com/showcase/goals-m5kr7), [JuryDuty](https://ethglobal.com/showcase/juryduty-zos15), [Facedown](https://facedown.app), [Pact](https://devpost.com/software/pact-s4akuo)
 - Trust failures: Yotta ([Banking Dive](https://www.bankingdive.com/news/yotta-ceo-85k-customers-lose-access-to-funds-due-to-synapse-evolve-tussle/718101/)); Pact/GymPact FTC settlement (2017)
 - Culture: Bank of America Better Money Habits (May 2026); Draper creator analysis (May 2026)
-- Earlier research: [NS&I Premium Bonds](https://www.nsandi.com/about-us/press-releases/2026/november-premium-bonds-two-millionaires-outer-london-and-shropshire), [PoolTogether on DefiLlama](https://defillama.com/protocol/pooltogether)
