@@ -6,11 +6,12 @@
 import { ArrowRight, ChevronRight, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { LiveClient, type ChallengeView, type CrewDetail, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
+import { LiveClient, friendlyError, type ChallengeView, type CrewDetail, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
 import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { usd } from "@/lib/format";
 import { ENTRY } from "@/lib/house-money/solana/hm";
 import { Onboarding } from "./Onboarding";
+import { useAuth } from "./auth/AuthContext";
 import { GroupScreen, GoalScreen, ResultsScreen, VoteScreen } from "./CrewRoom";
 import { NewGoal } from "./kept/NewGoal";
 import { AppealSheet } from "./AppealSheet";
@@ -30,8 +31,11 @@ export type Route =
 type Sheet = null | { id: "addFunds" } | { id: "withdraw" } | { id: "appeal"; v: ChallengeView } | { id: "verify"; v: ChallengeView };
 
 const YEAR = 31_536_000;
+/** Background refresh. Slow on purpose (RPC credits and rate limits); actions refresh right away anyway. */
+const POLL_MS = 45_000;
 
 export default function CrewsApp() {
+  const auth = useAuth();
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
   const [client, setClient] = useState<LiveClient | null>(null);
   const [connectErr, setConnectErr] = useState<string | null>(null);
@@ -51,10 +55,18 @@ export default function CrewsApp() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // The signed-in account (Privy) signs; without one, the demo key kept on this device. Retries with backoff.
   const connect = useCallback(() => {
     setConnectErr(null);
-    LiveClient.connect().then(setClient).catch((e: Error) => setConnectErr(e.message));
-  }, []);
+    let attempt = 0;
+    const tryOnce = () => {
+      LiveClient.connect(auth.signer).then(setClient).catch((e) => {
+        if (attempt++ < 3) setTimeout(tryOnce, 1500 * 2 ** attempt);
+        else setConnectErr(friendlyError(e));
+      });
+    };
+    tryOnce();
+  }, [auth.signer]);
 
   useEffect(() => {
     const t = setTimeout(connect, 0);
@@ -85,8 +97,9 @@ export default function CrewsApp() {
     groupKeyRef.current = groupKey;
   }, [groupKey]);
 
+  /** One read of everything. Returns false on failure; background failures keep the last good data on screen. */
   const refresh = useCallback(async () => {
-    if (!client) return;
+    if (!client) return false;
     try {
       const s = await client.snapshot();
       setSnap(s);
@@ -105,18 +118,51 @@ export default function CrewsApp() {
         for (const l of loaded) if (l) next[l[0]] = l[1];
         return next;
       });
+      return true;
     } catch (e) {
-      setSnapErr((e as Error).message);
+      setSnapErr(friendlyError(e));
+      return false;
     }
   }, [client]);
 
+  // After an action: refresh now and again shortly, because a read can lag behind a confirmed change.
+  const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const refreshSoon = useCallback(() => {
+    settleTimers.current.forEach(clearTimeout);
+    settleTimers.current = [0, 3000, 8000].map((d) => setTimeout(() => void refresh(), d));
+  }, [refresh]);
+  useEffect(() => {
+    const timers = settleTimers;
+    return () => timers.current.forEach(clearTimeout);
+  }, []);
+
+  // Slow poll with backoff when it fails, paused while the tab is hidden, refreshed when you come back.
   useEffect(() => {
     if (!client) return;
-    const first = setTimeout(refresh, 0);
-    const t = setInterval(refresh, 12_000);
+    let stop = false;
+    let fails = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (stop) return;
+      if (document.hidden) {
+        timer = setTimeout(tick, 5_000);
+        return;
+      }
+      const ok = await refresh();
+      fails = ok ? 0 : fails + 1;
+      if (!stop) timer = setTimeout(tick, ok ? POLL_MS : Math.min(30_000, 2_000 * 2 ** (fails - 1)));
+    };
+    timer = setTimeout(tick, 0);
+    const onVisible = () => {
+      if (document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, 0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearTimeout(first);
-      clearInterval(t);
+      stop = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [client, refresh]);
 
@@ -137,18 +183,23 @@ export default function CrewsApp() {
     window.scrollTo({ top: 0 });
   }, [route]);
 
+  const busyRef = useRef(false);
   const act: Act = async (label, fn, done) => {
+    if (busyRef.current) return false; // one action at a time: no double taps
+    busyRef.current = true;
     setBusy(label);
     setToast(null);
     try {
       await fn();
-      await refresh();
+      // Confirmed: close sheets and say so now, then catch the screen up in the background.
+      refreshSoon();
       if (done) setToast({ text: done, tone: "ok" });
       return true;
     } catch (e) {
-      setToast({ text: (e as Error).message, tone: "err" });
+      setToast({ text: friendlyError(e), tone: "err" });
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(null);
     }
   };

@@ -30,7 +30,7 @@ No wallet, no seed phrase, no fees: the app covers them.
 | | |
 |---|---|
 | Built and live on devnet | Groups with invite links and names; Apple Pay top-up (simulated); pacts where each person locks money on their own goal; only people who put money in confirm, never themselves, by strict majority; 95% of what's left behind to those who kept their word, 5% to the platform, taken once; automatic payouts; sponsored fees |
-| Not built yet | Appeal with proof reviewed by AI; a default outcome if nobody confirms; email login (Privy); automatic proof (Strava, Screen Time, Apple Health); real Apple Pay through an on-ramp |
+| Not built yet | Appeal with proof reviewed by AI; a default outcome if nobody confirms; automatic proof (Strava, Screen Time, Apple Health); real Apple Pay through an on-ramp |
 
 ## How it uses Solana
 
@@ -45,7 +45,7 @@ No wallet, no seed phrase, no fees: the app covers them.
 - **Money is held by the program, not by us.** Each group has a vault owned by a program address; people hold shares of it. Every transfer is signed by the program; nobody can move someone else's money.
 - **Pacts are accounts.** A pact stores the deadline and minimum; each person's stake and goal are their own accounts; one vote per person is enforced by a vote account.
 - **Payouts are code.** Strict majority of the other participants decides; the 5% moves once to a treasury; winners collect stake plus a pro-rata share of the rest; if nobody kept their word, everyone is refunded.
-- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. The app creates the user's key on the device.
+- **Crypto stays invisible.** A Cloudflare Worker co-signs every transaction as fee payer (only this program's instructions, capped fees) and credits test dollars for the simulated Apple Pay. People sign in with Google or email through Privy, which creates their account (see [`docs/privy-setup.md`](docs/privy-setup.md)); without a Privy app id the app falls back to a demo key on the device.
 
 Code: `programs/house_money/src` (on-chain program; the folder keeps its original name because the deployed program ID depends on it), `src/lib/house-money/solana` (client), `src/components` (screens), `worker/index.ts` (fee sponsor).
 

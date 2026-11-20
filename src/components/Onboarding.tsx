@@ -8,7 +8,10 @@ import { useState } from "react";
 import { FEE_PERCENT, KEEPERS_PERCENT } from "@/lib/brand";
 import { Icon3D } from "./kept/ui";
 
-export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
+/** When set (Privy), the last step signs in with Google or email instead of asking for a first name. */
+export interface SignInOptions { onGoogle: () => void; onEmail: () => void; error?: string }
+
+export function Onboarding({ onDone, signIn }: { onDone: (name: string) => void; signIn?: SignInOptions }) {
   const [step, setStep] = useState<"hero" | "name">("hero");
   const [name, setName] = useState("");
 
@@ -33,6 +36,20 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
           </button>
           <Link href="/demo" className="flex min-h-11 items-center text-sm font-medium underline">See the demo</Link>
         </div>
+      </div>
+    );
+  }
+
+  if (signIn) {
+    return (
+      <div className="enter flex flex-1 flex-col justify-center gap-5 px-6 pb-8 pt-6">
+        <div className="flex justify-center"><Icon3D name="friends" size={120} /></div>
+        <h1 className="text-[30px] font-medium leading-[1.1] tracking-tight">Sign in to start</h1>
+        <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
+        <button type="button" onClick={signIn.onGoogle} className="btn btn-primary w-full">Continue with Google</button>
+        <button type="button" onClick={signIn.onEmail} className="btn btn-quiet w-full">Continue with email</button>
+        {signIn.error && <p role="alert" className="text-sm text-danger">{signIn.error}</p>}
+        <button type="button" onClick={() => setStep("hero")} className="min-h-11 text-sm text-muted">Back</button>
       </div>
     );
   }
