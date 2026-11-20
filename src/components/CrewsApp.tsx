@@ -230,10 +230,10 @@ export default function CrewsApp() {
       )}
 
       {snap && (view.id === "home" || view.id === "me") && (
-        <nav aria-label="Main" className="glass sticky bottom-3 mx-4 mt-6 flex justify-around rounded-xl p-1.5">
+        <nav aria-label="Main" className="sticky bottom-3 z-10 mx-4 mt-6 flex justify-between gap-1 rounded-full bg-ink p-2 shadow-[0_12px_28px_rgba(26,26,24,0.28)]">
           {([["home", "Home", <Home key="h" className="h-5 w-5" aria-hidden />], ["me", "Me", <User key="u" className="h-5 w-5" aria-hidden />]] as const).map(([id, label, icon]) => (
             <button key={id} onClick={() => setView({ id })} aria-current={tab === id ? "page" : undefined}
-              className={`flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2 text-xs transition ${tab === id ? "bg-forest text-white" : "text-muted"}`}>
+              className={`flex min-h-12 flex-1 items-center justify-center gap-2 rounded-full text-[15px] font-medium transition ${tab === id ? "bg-mandarina text-ink" : "text-paper"}`}>
               {icon}{label}
             </button>
           ))}
@@ -301,7 +301,7 @@ export function liveValue(c: CrewView, snap: Snapshot, now: number) {
 
 function Shell({ children }: { children?: ReactNode }) {
   return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-[440px] flex-col overflow-hidden bg-paper sm:my-6 sm:min-h-[860px] sm:rounded-2xl sm:border sm:border-stone">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-[440px] flex-col overflow-x-clip bg-paper sm:my-6 sm:min-h-[860px] sm:rounded-[32px] sm:shadow-[0_24px_60px_rgba(46,34,96,0.18)]">
       <main className="flex flex-1 flex-col">{children}</main>
     </div>
   );
@@ -355,7 +355,7 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-ink/40" onClick={onClose}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="dialog-title" tabIndex={-1}
-        className="enter max-h-[92dvh] w-full max-w-[440px] overflow-y-auto rounded-t-2xl border border-stone bg-paper p-6 pb-8 outline-none" onClick={(e) => e.stopPropagation()}>
+        className="enter max-h-[92dvh] w-full max-w-[440px] overflow-y-auto rounded-t-[28px] bg-paper p-6 pb-8 outline-none" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <h2 id="dialog-title" className="text-2xl font-medium leading-tight tracking-tight">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-stone"><X className="h-4 w-4" aria-hidden /></button>
