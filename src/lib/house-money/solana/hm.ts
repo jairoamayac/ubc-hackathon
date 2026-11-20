@@ -223,13 +223,15 @@ export function discFilter(disc: readonly number[], bs58encode: (b: Uint8Array) 
 /** Confirms by polling (no websockets: works in Workers, browsers and behind proxies). */
 export async function confirm(conn: Connection, signature: string, lastValidBlockHeight: number, timeoutMs = 60_000) {
   const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+  // Gentle polling: the public RPC rate-limits, so wait a little longer each round and only check the
+  // block height every few rounds.
+  for (let round = 0; Date.now() - start < timeoutMs; round++) {
     const { value } = await conn.getSignatureStatuses([signature]);
     const st = value[0];
     if (st?.err) throw new Error(`Could not save that, try again. (${JSON.stringify(st.err)})`);
     if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
-    if ((await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
-    await new Promise((r) => setTimeout(r, 800));
+    if (round % 4 === 3 && (await conn.getBlockHeight("confirmed")) > lastValidBlockHeight) throw new Error("That took too long, try again.");
+    await new Promise((r) => setTimeout(r, Math.min(2500, 900 + round * 250)));
   }
   throw new Error("This is taking longer than usual, try again.");
 }
