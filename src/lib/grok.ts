@@ -54,3 +54,18 @@ export interface DisputeView {
   council?: Juror[];
   tally?: Tally;
 }
+
+export type VerifyVerdict = "KEPT" | "MISSED" | "CANNOT_VERIFY";
+export interface VerifyRequest { member: string; goal: string; criterion: string; deadline?: string; source: string }
+export interface VerificationView {
+  verification_id: string;
+  status: DisputeStatus;
+  created_at: number;
+  decided_at?: number;
+  error?: string;
+  verdict?: VerifyVerdict;
+  observed?: string;
+  checked_at?: string;
+  source?: string;
+  reason?: string;
+}

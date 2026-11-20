@@ -3,6 +3,8 @@
 //   POST /api/grok/callback      (alias /api/grok/verdict) the routine calls this back with the council's verdict (one-time Bearer token)
 //   GET  /api/disputes/:id       status, verdict and council, for the app to poll
 //   GET  /api/disputes/:id/image the proof screenshot, so the Bot can open it by link
+//   POST /api/verify             task "verify": Grok checks public data itself (e.g. an X follower count)
+//   GET  /api/verifications/:id  status and result of a verification, for the app to poll
 //   POST /api/streams/quicknode  a QuickNode Stream posts DisputeOpened events here (needs the program to emit the log)
 // The council only proposes. Nothing here signs a transaction or moves money.
 // Secrets (never in the repo): GROK_WEBHOOK_URL, GROK_WEBHOOK_KEY, QUICKNODE_STREAM_SECRET (optional).
@@ -28,6 +30,22 @@ interface Record_ extends DisputeView {
   imageType?: string;
   input: { challenge: string; member: string; goal: string };
 }
+
+interface VerifyRecord {
+  verification_id: string;
+  status: "pending" | "decided" | "failed";
+  created_at: number;
+  decided_at?: number;
+  error?: string;
+  verdict?: "KEPT" | "MISSED" | "CANNOT_VERIFY";
+  observed?: string;
+  checked_at?: string;
+  source?: string;
+  reason?: string;
+  tokenHash?: string;
+}
+const VERIFY_VERDICTS = ["KEPT", "MISSED", "CANNOT_VERIFY"] as const;
+const HANDLE = /^@?[A-Za-z0-9_]{1,15}$/;
 
 const TTL = 60 * 60 * 24 * 7;
 const MAX_BODY = 900_000;
@@ -94,6 +112,7 @@ async function createDispute(
   if (image) await env.DISPUTES.put(`img:${id}`, image.bytes, { expirationTtl: TTL });
 
   const payload = {
+    task: "judge",
     dispute_id: id,
     challenge: clip(d.challenge, 64),
     member: clip(d.member, 60),
@@ -154,6 +173,53 @@ const publicView = (r: Record_): DisputeView => {
   return view;
 };
 
+/** Best effort per-IP limit so the public endpoints cannot burn the Bot's hourly runs. */
+async function rateLimited(req: Request, env: GrokEnv): Promise<Response | null> {
+  if (!env.DISPUTES) return null;
+  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+  const key = `rl:${ip}:${Math.floor(Date.now() / 600_000)}`;
+  const n = Number((await env.DISPUTES.get(key)) ?? 0);
+  if (n >= RATE_LIMIT) return json({ error: "Too many requests. Try again in a few minutes." }, 429);
+  await env.DISPUTES.put(key, String(n + 1), { expirationTtl: 700 });
+  return null;
+}
+
+/** Starts a "verify" run: Grok reads public data (e.g. X followers) and calls back with KEPT, MISSED or CANNOT_VERIFY. */
+async function createVerification(env: GrokEnv, base: string, d: Record<string, unknown>): Promise<Created> {
+  if (!env.GROK_WEBHOOK_URL || !env.GROK_WEBHOOK_KEY) return { status: 503, body: { error: "Grok is not configured on this server." } };
+  if (!env.DISPUTES) return { status: 503, body: { error: "Storage is not configured on this server." } };
+  const id = crypto.randomUUID();
+  const token = hex(crypto.getRandomValues(new Uint8Array(32)));
+  const source = "@" + clip(d.source, 20).replace(/^@/, "");
+  const record: VerifyRecord = { verification_id: id, status: "pending", created_at: Date.now(), tokenHash: await sha256(token) };
+  await env.DISPUTES.put(`v:${id}`, JSON.stringify(record), { expirationTtl: TTL });
+  const payload = {
+    task: "verify",
+    verification_id: id,
+    member: clip(d.member, 60),
+    goal: clip(d.goal, 200),
+    criterion: clip(d.criterion, 300),
+    deadline: clip(d.deadline, 40),
+    source,
+    callback_url: `${base}/api/grok/callback`,
+    callback_token: token,
+  };
+  try {
+    const res = await fetch(env.GROK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.GROK_WEBHOOK_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`Grok Bot did not start the run (HTTP ${res.status}).`);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : "Could not reach Grok Bot.";
+    await env.DISPUTES.put(`v:${id}`, JSON.stringify({ ...record, status: "failed", error, tokenHash: undefined }), { expirationTtl: TTL });
+    return { status: 502, body: { error, verification_id: id, status: "failed" } };
+  }
+  return { status: 202, body: { verification_id: id, status: "pending" } };
+}
+
 /** Returns a Response when the path belongs to the council, otherwise null. */
 export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<Response | null> {
   const path = url.pathname;
@@ -174,14 +240,8 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
       image = { bytes: bin.buffer as ArrayBuffer, type: m[1] };
     }
 
-    // Best effort per-IP limit so the public endpoint cannot burn the Bot's hourly runs.
-    if (env.DISPUTES) {
-      const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
-      const key = `rl:${ip}:${Math.floor(Date.now() / 600_000)}`;
-      const n = Number((await env.DISPUTES.get(key)) ?? 0);
-      if (n >= RATE_LIMIT) return json({ error: "Too many appeals. Try again in a few minutes." }, 429);
-      await env.DISPUTES.put(key, String(n + 1), { expirationTtl: 700 });
-    }
+    const limited = await rateLimited(req, env);
+    if (limited) return limited;
 
     const out = await createDispute(env, baseUrl(env, url), d, image);
     return json(out.body, out.status);
@@ -191,6 +251,22 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
     const token = bearer(req);
     const body = await readJson(req, 40_000);
     if (!token || !body.ok || !env.DISPUTES) return json({ error: "Unauthorized" }, 401);
+    const vid = clip(body.data.verification_id, 40);
+    if (vid) {
+      if (!UUID.test(vid)) return json({ error: "Unauthorized" }, 401);
+      const rawV = await env.DISPUTES.get(`v:${vid}`);
+      const v = rawV ? (JSON.parse(rawV) as VerifyRecord) : null;
+      if (!v || v.status !== "pending" || !v.tokenHash || !same(v.tokenHash, await sha256(token))) return json({ error: "Unauthorized" }, 401);
+      const verdict = VERIFY_VERDICTS.find((x) => x === body.data.verdict);
+      if (!verdict) return json({ error: `verdict must be one of ${VERIFY_VERDICTS.join(", ")}.` }, 400);
+      const observed = typeof body.data.observed === "number" ? String(body.data.observed) : clip(body.data.observed, 120);
+      const done: VerifyRecord = {
+        ...v, status: "decided", decided_at: Date.now(), tokenHash: undefined, verdict, observed,
+        checked_at: clip(body.data.checked_at, 40), source: clip(body.data.source, 40), reason: clip(body.data.reason, 600),
+      };
+      await env.DISPUTES.put(`v:${vid}`, JSON.stringify(done), { expirationTtl: TTL });
+      return json({ ok: true });
+    }
     const id = clip(body.data.dispute_id, 40);
     if (!UUID.test(id)) return json({ error: "Unauthorized" }, 401);
     const raw = await env.DISPUTES.get(`d:${id}`);
@@ -202,6 +278,28 @@ export async function handleGrok(req: Request, url: URL, env: GrokEnv): Promise<
     const decided: Record_ = { ...rec, ...verdict, status: "decided", decided_at: Date.now(), tokenHash: undefined };
     await env.DISPUTES.put(`d:${id}`, JSON.stringify(decided), { expirationTtl: TTL });
     return json({ ok: true });
+  }
+
+  if (path === "/api/verify" && req.method === "POST") {
+    const body = await readJson(req, 20_000);
+    if (!body.ok) return body.res;
+    const d = body.data;
+    if (!HANDLE.test(clip(d.source, 20))) return json({ error: "Enter a valid X handle, like @martin." }, 400);
+    if (!clip(d.goal, 200) || !clip(d.criterion, 300)) return json({ error: "Goal and criterion are required." }, 400);
+    const limited = await rateLimited(req, env);
+    if (limited) return limited;
+    const out = await createVerification(env, baseUrl(env, url), d);
+    return json(out.body, out.status);
+  }
+
+  const vm = /^\/api\/verifications\/([^/]+)$/.exec(path);
+  if (vm && req.method === "GET") {
+    if (!UUID.test(vm[1]) || !env.DISPUTES) return json({ error: "Not found" }, 404);
+    const raw = await env.DISPUTES.get(`v:${vm[1]}`);
+    if (!raw) return json({ error: "Not found" }, 404);
+    const { tokenHash: _t, ...view } = JSON.parse(raw) as VerifyRecord;
+    void _t;
+    return json(view);
   }
 
   const m = /^\/api\/disputes\/([^/]+)(\/image)?$/.exec(path);
