@@ -10,7 +10,7 @@ import {
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
-import { PROGRAM_ID, priorityIxs } from "../src/lib/house-money/solana/hm";
+import { PROGRAM_ID, SOCIAL_PAYER_IXS, priorityIxs } from "../src/lib/house-money/solana/hm";
 
 interface Env {
   ASSETS: { fetch: (r: Request) => Promise<Response> };
@@ -20,12 +20,14 @@ interface Env {
 }
 
 const COMPUTE_BUDGET = new PublicKey("ComputeBudget111111111111111111111111111111");
-// create_crew, join_crew, open_call, settle_call: account #0 only pays rent (the program never moves its tokens).
+// Instructions where account #0 only pays rent (the program never moves its tokens):
+// create_crew, join_crew, open_call, settle_call, plus the social ones (profiles, bets, challenges, votes).
 const PAYER_IXS = new Set([
   "176,106,87,57,118,114,236,48",
   "86,114,155,5,187,60,196,223",
   "153,26,89,45,252,243,183,62",
   "58,230,6,58,104,245,154,227",
+  ...SOCIAL_PAYER_IXS,
 ]);
 const MAX_TOPUP_USD = 500;
 const MAX_CU = 400_000;

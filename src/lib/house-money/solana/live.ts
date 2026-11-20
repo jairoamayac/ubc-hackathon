@@ -26,6 +26,29 @@ export interface Snapshot {
   now: number;
 }
 
+
+export interface PersonView { owner: PublicKey; name: string; value: number; isMe: boolean }
+export interface BetView {
+  bet: hm.BetAccount;
+  subjectName?: string;
+  creatorName: string;
+  yesUsd: number;
+  noUsd: number;
+  mine?: { side: number; usd: number; claimed: boolean; payoutUsd: number };
+  myVote?: number;
+  canVote: boolean;
+}
+export interface EntryView { entry: hm.EntryAccount; name: string; isMe: boolean; myVote?: number }
+export interface ChallengeView {
+  challenge: hm.ChallengeAccount;
+  creatorName: string;
+  stakeUsd: number;
+  potUsd: number;
+  entries: EntryView[];
+  mine?: EntryView & { payoutUsd: number; usd: number };
+}
+export interface CrewDetail { crew: PublicKey; people: PersonView[]; bets: BetView[]; challenges: ChallengeView[]; isMember: boolean }
+
 const KEY = "hm.account.v1";
 
 // Duplicate demo crews left on devnet by interrupted seed runs. Crews cannot be deleted on-chain,
@@ -53,6 +76,14 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 }
 
 function friendly(msg: string) {
+  if (msg.includes("BetClosed")) return "That one is closed already.";
+  if (msg.includes("BetStillOpen")) return "Voting opens when time is up.";
+  if (msg.includes("SubjectCantVote")) return "You can't vote on yourself.";
+  if (msg.includes("AlreadyDecided")) return "The crew already decided.";
+  if (msg.includes("NotDecided")) return "The crew hasn't decided yet.";
+  if (msg.includes("AlreadyClaimed")) return "Already collected.";
+  if (msg.includes("NotEnoughShares")) return "Not enough money in this crew. Add more first.";
+  if (msg.includes("already in use")) return "You already did that one.";
   if (msg.includes("PrincipalIsProtected")) return "Only what your crew earned can be played. Your savings are protected.";
   if (msg.includes("CallNotExpired")) return "Your call is still running.";
   if (msg.includes("CallOpen")) return "Finish your open call first.";
@@ -168,6 +199,143 @@ export class LiveClient {
   }
   settle(crew: PublicKey) {
     return this.send([hm.settleCallIx(this.sponsor, this.mint, crew, this.owner.publicKey)]);
+  }
+
+  // ------------------------------------------------------------ social layer
+  private filter(disc: readonly number[], offset?: number, key?: PublicKey) {
+    const f: ({ memcmp: { offset: number; bytes: string } })[] = [hm.discFilter(disc, bs58.encode)];
+    if (key && offset !== undefined) f.push({ memcmp: { offset, bytes: key.toBase58() } });
+    return f;
+  }
+
+  /** Everything the crew screen needs: people with names, bets and challenges with my position and votes. */
+  async crewDetail(crew: PublicKey): Promise<CrewDetail> {
+    const me = this.owner.publicKey;
+    const [members, bets, challenges, crewInfo, vaultInfo] = await Promise.all([
+      this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.ACCOUNT_DISC.Member, 8, crew) }),
+      this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.SOCIAL_ACCOUNT_DISC.Bet, 8, crew) }),
+      this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.SOCIAL_ACCOUNT_DISC.Challenge, 8, crew) }),
+      this.conn.getAccountInfo(crew),
+      this.conn.getAccountInfo(hm.crewVaultPda(crew)),
+    ]);
+    const c = hm.decodeCrew(crew, crewInfo!.data);
+    const vault = vaultInfo ? vaultInfo.data.readBigUInt64LE(64) : 0n;
+    const usd = (shares: bigint) => hm.toUsd(hm.assetsForShares(shares, c.totalShares, vault));
+    const ms = members.map((a) => hm.decodeMember(a.pubkey, a.account.data));
+
+    const bs = bets.map((a) => hm.decodeBet(a.pubkey, a.account.data)).sort((x, y) => Number(y.betId - x.betId));
+    const cs = challenges.map((a) => hm.decodeChallenge(a.pubkey, a.account.data)).sort((x, y) => Number(y.challengeId - x.challengeId));
+    const entryAccs = cs.length
+      ? (await Promise.all(cs.map((ch) => this.conn.getProgramAccounts(hm.PROGRAM_ID, { filters: this.filter(hm.SOCIAL_ACCOUNT_DISC.Entry, 8, ch.address) })))).flat()
+      : [];
+    const entries = entryAccs.map((a) => hm.decodeEntry(a.pubkey, a.account.data));
+
+    // Names, my positions and my votes in a few batched reads.
+    const owners = [...new Set([...ms.map((m) => m.owner.toBase58()), ...bs.map((b) => b.subject.toBase58())])].map((k) => new PublicKey(k));
+    const lookups = [
+      ...owners.map((o) => hm.profilePda(o)),
+      ...bs.map((b) => hm.positionPda(b.address, me)),
+      ...bs.map((b) => hm.votePda(b.address, me)),
+      ...entries.map((e) => hm.votePda(e.address, me)),
+    ];
+    const infos: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
+    for (let i = 0; i < lookups.length; i += 100) infos.push(...(await this.conn.getMultipleAccountsInfo(lookups.slice(i, i + 100))));
+    let k = 0;
+    const names = new Map<string, string>();
+    for (const o of owners) {
+      const inf = infos[k++];
+      names.set(o.toBase58(), inf ? hm.decodeProfile(hm.profilePda(o), inf.data).name : "Someone");
+    }
+    names.set(me.toBase58(), "You");
+    const nameOf = (p: PublicKey) => names.get(p.toBase58()) ?? "Someone";
+    const voteChoice = (inf: (typeof infos)[number]) => (inf ? inf.data[8 + 32] : undefined);
+
+    const betViews: BetView[] = bs.map((b) => {
+      const posInfo = infos[k + bs.indexOf(b)];
+      const pos = posInfo ? hm.decodePosition(hm.positionPda(b.address, me), posInfo.data) : undefined;
+      let payout = 0n;
+      if (pos && b.outcome !== hm.OUTCOME.OPEN) {
+        const [w, l] = b.outcome === hm.OUTCOME.YES ? [b.yesShares, b.noShares] : [b.noShares, b.yesShares];
+        payout = w === 0n ? pos.shares : pos.side === b.outcome ? hm.winnerPayout(pos.shares, w, l) : 0n;
+      }
+      return {
+        bet: b,
+        subjectName: b.subject.equals(hm.NOBODY) ? undefined : nameOf(b.subject),
+        creatorName: nameOf(b.creator),
+        yesUsd: usd(b.yesShares),
+        noUsd: usd(b.noShares),
+        mine: pos ? { side: pos.side, usd: usd(pos.shares), claimed: pos.claimed, payoutUsd: usd(payout) } : undefined,
+        myVote: voteChoice(infos[k + bs.length + bs.indexOf(b)]),
+        canVote: !b.subject.equals(me),
+      };
+    });
+    k += bs.length * 2;
+    const entryVotes = new Map(entries.map((e, i) => [e.address.toBase58(), voteChoice(infos[k + i])]));
+
+    const chViews: ChallengeView[] = cs.map((ch) => {
+      const es: EntryView[] = entries
+        .filter((e) => e.challenge.equals(ch.address))
+        .map((e) => ({ entry: e, name: nameOf(e.owner), isMe: e.owner.equals(me), myVote: entryVotes.get(e.address.toBase58()) }));
+      const mine = es.find((e) => e.isMe);
+      let payout = 0n;
+      if (mine && ch.participants > 0 && ch.decided === ch.participants) {
+        payout = ch.passedShares === 0n ? mine.entry.shares : mine.entry.status === hm.ENTRY.PASSED ? hm.winnerPayout(mine.entry.shares, ch.passedShares, ch.failedShares) : 0n;
+      }
+      return {
+        challenge: ch,
+        creatorName: nameOf(ch.creator),
+        stakeUsd: hm.toUsd(ch.stake),
+        potUsd: usd(es.reduce((s, e) => s + e.entry.shares, 0n)),
+        entries: es,
+        mine: mine ? { ...mine, payoutUsd: usd(payout), usd: usd(mine.entry.shares) } : undefined,
+      };
+    });
+
+    const people: PersonView[] = ms
+      .map((m) => ({ owner: m.owner, name: nameOf(m.owner), value: usd(m.shares), isMe: m.owner.equals(me) }))
+      .sort((a, b) => b.value - a.value);
+    return { crew, people, bets: betViews, challenges: chViews, isMember: ms.some((m) => m.owner.equals(me)) };
+  }
+
+  private async usdToShares(crew: PublicKey, usdAmount: number) {
+    const [ci, vi] = await this.conn.getMultipleAccountsInfo([crew, hm.crewVaultPda(crew)]);
+    const c = hm.decodeCrew(crew, ci!.data);
+    const vault = vi ? vi.data.readBigUInt64LE(64) : 0n;
+    return (hm.fromUsd(usdAmount) * (c.totalShares + 1000n)) / (vault + 1n);
+  }
+
+  setProfile(name: string) {
+    return this.send([hm.setProfileIx(this.sponsor, this.owner.publicKey, name)]);
+  }
+  createBet(crew: PublicKey, question: string, subject: PublicKey, minutes: number) {
+    const closesAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
+    return this.send([hm.createBetIx(this.sponsor, this.owner.publicKey, crew, BigInt(Date.now()), question, subject, closesAt)]);
+  }
+  async placeBet(crew: PublicKey, bet: PublicKey, side: 1 | 2, usdAmount: number) {
+    const shares = await this.usdToShares(crew, usdAmount);
+    return this.send([hm.placeBetIx(this.sponsor, this.owner.publicKey, crew, bet, side, shares)]);
+  }
+  voteBet(crew: PublicKey, bet: PublicKey, choice: 1 | 2) {
+    return this.send([hm.voteBetIx(this.sponsor, this.owner.publicKey, crew, bet, choice)]);
+  }
+  claimBet(crew: PublicKey, bet: PublicKey) {
+    return this.send([hm.claimBetIx(this.owner.publicKey, crew, bet)]);
+  }
+  createChallenge(crew: PublicKey, title: string, stakeUsd: number, minutes: number, join: boolean) {
+    const id = BigInt(Date.now());
+    const endsAt = Math.floor(Date.now() / 1000) + Math.round(minutes * 60);
+    const ixs = [hm.createChallengeIx(this.sponsor, this.owner.publicKey, crew, id, title, hm.fromUsd(stakeUsd), endsAt)];
+    if (join) ixs.push(hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, hm.challengePda(crew, id)));
+    return this.send(ixs);
+  }
+  joinChallenge(crew: PublicKey, challenge: PublicKey) {
+    return this.send([hm.joinChallengeIx(this.sponsor, this.owner.publicKey, crew, challenge)]);
+  }
+  voteEntry(crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
+    return this.send([hm.voteEntryIx(this.sponsor, this.owner.publicKey, crew, challenge, entryOwner, passed)]);
+  }
+  claimChallenge(crew: PublicKey, challenge: PublicKey) {
+    return this.send([hm.claimChallengeIx(this.owner.publicKey, crew, challenge)]);
   }
 
   private async send(ixs: TransactionInstruction[]) {

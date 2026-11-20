@@ -1,0 +1,534 @@
+//! Social layer: profiles, bets on real-life moments and challenges where whoever fails pays the rest.
+//!
+//! Everything is staked in crew *shares*, so stakes keep earning the crew's yield while they are locked
+//! (a bet or a challenge "rinde" until it settles). No tokens move: shares go from a member to the
+//! bet/challenge account and back to the winners, inside the same crew vault.
+//!
+//! Invariants:
+//! S1. Shares are conserved: sum(member shares) + sum(locked in bets/challenges) never changes on
+//!     stake, vote or claim (claims pay out exactly what was locked, rounding dust stays locked).
+//! S2. One vote per member per bet/entry (a Vote PDA is created per voter; a second init fails).
+//! S3. The subject of a bet can't vote on it; a challenge participant can't vote on their own entry.
+//! S4. Outcomes are final once a strict majority of eligible members agrees.
+//! S5. If nobody is on the winning side (or nobody completes a challenge), everyone gets their stake back.
+
+use anchor_lang::prelude::*;
+
+use crate::{Crew, HmError, Member};
+
+pub const MAX_QUESTION_LEN: usize = 80;
+pub const MAX_PROFILE_NAME_LEN: usize = 24;
+
+pub const OPEN: u8 = 0;
+pub const YES: u8 = 1;
+pub const NO: u8 = 2;
+
+pub const PENDING: u8 = 0;
+pub const PASSED: u8 = 1;
+pub const FAILED: u8 = 2;
+
+// ---------------------------------------------------------------- pure math (unit tested)
+
+/// Strict majority of `eligible` voters (at least 1).
+pub fn majority(eligible: u32) -> u32 {
+    eligible / 2 + 1
+}
+
+/// What a winner takes home: their stake plus a pro-rata cut of the losers' stakes.
+/// If nobody won, everyone gets their own stake back (S5).
+pub fn winner_payout(own: u64, winners_total: u64, losers_total: u64) -> Result<u64> {
+    if winners_total == 0 {
+        return Ok(own);
+    }
+    let bonus = (losers_total as u128)
+        .checked_mul(own as u128)
+        .ok_or(HmError::MathOverflow)?
+        / winners_total as u128;
+    u64::try_from(own as u128 + bonus).map_err(|_| HmError::MathOverflow.into())
+}
+
+// ---------------------------------------------------------------- accounts
+
+#[account]
+#[derive(InitSpace)]
+pub struct Profile {
+    pub owner: Pubkey,
+    #[max_len(24)]
+    pub name: String,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Bet {
+    pub crew: Pubkey,
+    pub creator: Pubkey,
+    pub bet_id: u64,
+    #[max_len(80)]
+    pub question: String,
+    /// The person the bet is about (can't vote). Pubkey::default() when it's about nobody in the crew.
+    pub subject: Pubkey,
+    pub closes_at: i64,
+    pub yes_shares: u64,
+    pub no_shares: u64,
+    pub bettors: u16,
+    pub yes_votes: u16,
+    pub no_votes: u16,
+    pub outcome: u8,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Position {
+    pub bet: Pubkey,
+    pub owner: Pubkey,
+    pub side: u8,
+    pub shares: u64,
+    pub claimed: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Challenge {
+    pub crew: Pubkey,
+    pub creator: Pubkey,
+    pub challenge_id: u64,
+    #[max_len(80)]
+    pub title: String,
+    /// Stake per participant, in dollar units (6 decimals); converted to shares when joining.
+    pub stake: u64,
+    pub ends_at: i64,
+    pub participants: u16,
+    pub decided: u16,
+    pub passed_shares: u64,
+    pub failed_shares: u64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Entry {
+    pub challenge: Pubkey,
+    pub owner: Pubkey,
+    pub shares: u64,
+    pub pass_votes: u16,
+    pub fail_votes: u16,
+    pub status: u8,
+    pub claimed: bool,
+    pub bump: u8,
+}
+
+/// Marker so a member can vote only once on a bet or an entry (S2).
+#[account]
+#[derive(InitSpace)]
+pub struct Vote {
+    pub voter: Pubkey,
+    pub choice: u8,
+    pub bump: u8,
+}
+
+// ---------------------------------------------------------------- handlers
+
+pub fn set_profile_handler(ctx: Context<SetProfile>, name: String) -> Result<()> {
+    require!(!name.trim().is_empty() && name.len() <= MAX_PROFILE_NAME_LEN, HmError::BadName);
+    let p = &mut ctx.accounts.profile;
+    p.owner = ctx.accounts.owner.key();
+    p.name = name;
+    p.bump = ctx.bumps.profile;
+    Ok(())
+}
+
+pub fn create_bet_handler(ctx: Context<CreateBet>, bet_id: u64, question: String, subject: Pubkey, closes_at: i64) -> Result<()> {
+    require!(!question.trim().is_empty() && question.len() <= MAX_QUESTION_LEN, HmError::BadName);
+    let now = Clock::get()?.unix_timestamp;
+    require!(closes_at > now, HmError::BadDeadline);
+    let b = &mut ctx.accounts.bet;
+    b.crew = ctx.accounts.crew.key();
+    b.creator = ctx.accounts.owner.key();
+    b.bet_id = bet_id;
+    b.question = question;
+    b.subject = subject;
+    b.closes_at = closes_at;
+    b.yes_shares = 0;
+    b.no_shares = 0;
+    b.bettors = 0;
+    b.yes_votes = 0;
+    b.no_votes = 0;
+    b.outcome = OPEN;
+    b.bump = ctx.bumps.bet;
+    emit!(BetCreated { bet: b.key(), crew: b.crew, question: b.question.clone(), closes_at });
+    Ok(())
+}
+
+pub fn place_bet_handler(ctx: Context<PlaceBet>, side: u8, shares: u64) -> Result<()> {
+    require!(side == YES || side == NO, HmError::BadDirection);
+    require!(shares > 0, HmError::ZeroAmount);
+    require!(!ctx.accounts.member.open_call, HmError::CallOpen);
+    let now = Clock::get()?.unix_timestamp;
+    let b = &mut ctx.accounts.bet;
+    require!(b.outcome == OPEN && now < b.closes_at, HmError::BetClosed);
+    let m = &mut ctx.accounts.member;
+    require!(shares <= m.shares, HmError::NotEnoughShares);
+    m.shares -= shares;
+    if side == YES {
+        b.yes_shares = b.yes_shares.checked_add(shares).ok_or(HmError::MathOverflow)?;
+    } else {
+        b.no_shares = b.no_shares.checked_add(shares).ok_or(HmError::MathOverflow)?;
+    }
+    b.bettors = b.bettors.saturating_add(1);
+    let p = &mut ctx.accounts.position;
+    p.bet = b.key();
+    p.owner = m.owner;
+    p.side = side;
+    p.shares = shares;
+    p.claimed = false;
+    p.bump = ctx.bumps.position;
+    emit!(BetPlaced { bet: b.key(), owner: m.owner, side, shares });
+    Ok(())
+}
+
+pub fn vote_bet_handler(ctx: Context<VoteBet>, choice: u8) -> Result<()> {
+    require!(choice == YES || choice == NO, HmError::BadDirection);
+    let now = Clock::get()?.unix_timestamp;
+    let crew_members = ctx.accounts.crew.members;
+    let b = &mut ctx.accounts.bet;
+    require!(now >= b.closes_at, HmError::BetStillOpen);
+    require!(b.outcome == OPEN, HmError::AlreadyDecided);
+    let voter = ctx.accounts.owner.key();
+    require_keys_neq!(voter, b.subject, HmError::SubjectCantVote); // S3
+    let v = &mut ctx.accounts.vote;
+    v.voter = voter;
+    v.choice = choice;
+    v.bump = ctx.bumps.vote;
+    if choice == YES {
+        b.yes_votes += 1;
+    } else {
+        b.no_votes += 1;
+    }
+    let subject_in_crew = b.subject != Pubkey::default();
+    let eligible = (crew_members as u32).saturating_sub(subject_in_crew as u32).max(1);
+    let need = majority(eligible) as u16;
+    if b.yes_votes >= need {
+        b.outcome = YES;
+    } else if b.no_votes >= need {
+        b.outcome = NO;
+    }
+    if b.outcome != OPEN {
+        emit!(BetResolved { bet: b.key(), outcome: b.outcome });
+    }
+    Ok(())
+}
+
+pub fn claim_bet_handler(ctx: Context<ClaimBet>) -> Result<()> {
+    let b = &ctx.accounts.bet;
+    require!(b.outcome != OPEN, HmError::NotDecided);
+    let p = &mut ctx.accounts.position;
+    require!(!p.claimed, HmError::AlreadyClaimed);
+    let (winners, losers) = if b.outcome == YES { (b.yes_shares, b.no_shares) } else { (b.no_shares, b.yes_shares) };
+    let payout = if winners == 0 {
+        p.shares // S5: nobody won, refund
+    } else if p.side == b.outcome {
+        winner_payout(p.shares, winners, losers)?
+    } else {
+        0
+    };
+    p.claimed = true;
+    let m = &mut ctx.accounts.member;
+    m.shares = m.shares.checked_add(payout).ok_or(HmError::MathOverflow)?;
+    emit!(BetClaimed { bet: b.key(), owner: m.owner, shares: payout });
+    Ok(())
+}
+
+pub fn create_challenge_handler(ctx: Context<CreateChallenge>, challenge_id: u64, title: String, stake: u64, ends_at: i64) -> Result<()> {
+    require!(!title.trim().is_empty() && title.len() <= MAX_QUESTION_LEN, HmError::BadName);
+    require!(stake > 0, HmError::ZeroAmount);
+    let now = Clock::get()?.unix_timestamp;
+    require!(ends_at > now, HmError::BadDeadline);
+    let c = &mut ctx.accounts.challenge;
+    c.crew = ctx.accounts.crew.key();
+    c.creator = ctx.accounts.owner.key();
+    c.challenge_id = challenge_id;
+    c.title = title;
+    c.stake = stake;
+    c.ends_at = ends_at;
+    c.participants = 0;
+    c.decided = 0;
+    c.passed_shares = 0;
+    c.failed_shares = 0;
+    c.bump = ctx.bumps.challenge;
+    emit!(ChallengeCreated { challenge: c.key(), crew: c.crew, title: c.title.clone(), stake, ends_at });
+    Ok(())
+}
+
+pub fn join_challenge_handler(ctx: Context<JoinChallenge>) -> Result<()> {
+    require!(!ctx.accounts.member.open_call, HmError::CallOpen);
+    let now = Clock::get()?.unix_timestamp;
+    let c = &mut ctx.accounts.challenge;
+    require!(now < c.ends_at, HmError::BetClosed);
+    let vault = ctx.accounts.crew_vault.amount;
+    let total = ctx.accounts.crew.total_shares;
+    // The stake is a dollar amount; lock the shares worth that much right now (rounded up).
+    let shares = crate::shares_for_assets(c.stake, total, vault, true)?;
+    let m = &mut ctx.accounts.member;
+    require!(shares > 0 && shares <= m.shares, HmError::NotEnoughShares);
+    m.shares -= shares;
+    c.participants = c.participants.checked_add(1).ok_or(HmError::MathOverflow)?;
+    let e = &mut ctx.accounts.entry;
+    e.challenge = c.key();
+    e.owner = m.owner;
+    e.shares = shares;
+    e.pass_votes = 0;
+    e.fail_votes = 0;
+    e.status = PENDING;
+    e.claimed = false;
+    e.bump = ctx.bumps.entry;
+    emit!(ChallengeJoined { challenge: c.key(), owner: m.owner, shares });
+    Ok(())
+}
+
+pub fn vote_entry_handler(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let crew_members = ctx.accounts.crew.members;
+    let c = &mut ctx.accounts.challenge;
+    require!(now >= c.ends_at, HmError::BetStillOpen);
+    let e = &mut ctx.accounts.entry;
+    require!(e.status == PENDING, HmError::AlreadyDecided);
+    let voter = ctx.accounts.owner.key();
+    require_keys_neq!(voter, e.owner, HmError::SubjectCantVote); // S3
+    let v = &mut ctx.accounts.vote;
+    v.voter = voter;
+    v.choice = if passed { PASSED } else { FAILED };
+    v.bump = ctx.bumps.vote;
+    if passed {
+        e.pass_votes += 1;
+    } else {
+        e.fail_votes += 1;
+    }
+    let need = majority((crew_members as u32).saturating_sub(1).max(1)) as u16;
+    if e.pass_votes >= need {
+        e.status = PASSED;
+        c.passed_shares = c.passed_shares.checked_add(e.shares).ok_or(HmError::MathOverflow)?;
+    } else if e.fail_votes >= need {
+        e.status = FAILED;
+        c.failed_shares = c.failed_shares.checked_add(e.shares).ok_or(HmError::MathOverflow)?;
+    }
+    if e.status != PENDING {
+        c.decided += 1;
+        emit!(EntryDecided { challenge: c.key(), owner: e.owner, status: e.status });
+    }
+    Ok(())
+}
+
+pub fn claim_challenge_handler(ctx: Context<ClaimChallenge>) -> Result<()> {
+    let c = &ctx.accounts.challenge;
+    require!(c.participants > 0 && c.decided == c.participants, HmError::NotDecided);
+    let e = &mut ctx.accounts.entry;
+    require!(!e.claimed, HmError::AlreadyClaimed);
+    let payout = if c.passed_shares == 0 {
+        e.shares // S5: nobody completed, refund
+    } else if e.status == PASSED {
+        winner_payout(e.shares, c.passed_shares, c.failed_shares)?
+    } else {
+        0
+    };
+    e.claimed = true;
+    let m = &mut ctx.accounts.member;
+    m.shares = m.shares.checked_add(payout).ok_or(HmError::MathOverflow)?;
+    emit!(ChallengeClaimed { challenge: c.key(), owner: m.owner, shares: payout });
+    Ok(())
+}
+
+// ---------------------------------------------------------------- contexts
+
+#[derive(Accounts)]
+pub struct SetProfile<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(init_if_needed, payer = payer, space = 8 + Profile::INIT_SPACE, seeds = [b"profile", owner.key().as_ref()], bump)]
+    pub profile: Account<'info, Profile>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(bet_id: u64)]
+pub struct CreateBet<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(seeds = [b"crew", crew.creator.as_ref(), &crew.crew_id.to_le_bytes()], bump = crew.bump)]
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(init, payer = payer, space = 8 + Bet::INIT_SPACE,
+        seeds = [b"bet", crew.key().as_ref(), &bet_id.to_le_bytes()], bump)]
+    pub bet: Account<'info, Bet>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct PlaceBet<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    pub crew: Account<'info, Crew>,
+    #[account(mut, seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(mut, seeds = [b"bet", crew.key().as_ref(), &bet.bet_id.to_le_bytes()], bump = bet.bump, has_one = crew)]
+    pub bet: Account<'info, Bet>,
+    #[account(init, payer = payer, space = 8 + Position::INIT_SPACE,
+        seeds = [b"position", bet.key().as_ref(), owner.key().as_ref()], bump)]
+    pub position: Account<'info, Position>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct VoteBet<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(mut, seeds = [b"bet", crew.key().as_ref(), &bet.bet_id.to_le_bytes()], bump = bet.bump, has_one = crew)]
+    pub bet: Account<'info, Bet>,
+    #[account(init, payer = payer, space = 8 + Vote::INIT_SPACE,
+        seeds = [b"vote", bet.key().as_ref(), owner.key().as_ref()], bump)]
+    pub vote: Account<'info, Vote>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimBet<'info> {
+    pub owner: Signer<'info>,
+    pub crew: Account<'info, Crew>,
+    #[account(mut, seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(seeds = [b"bet", crew.key().as_ref(), &bet.bet_id.to_le_bytes()], bump = bet.bump, has_one = crew)]
+    pub bet: Account<'info, Bet>,
+    #[account(mut, seeds = [b"position", bet.key().as_ref(), owner.key().as_ref()], bump = position.bump, has_one = owner, has_one = bet)]
+    pub position: Account<'info, Position>,
+}
+
+#[derive(Accounts)]
+#[instruction(challenge_id: u64)]
+pub struct CreateChallenge<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(seeds = [b"crew", crew.creator.as_ref(), &crew.crew_id.to_le_bytes()], bump = crew.bump)]
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(init, payer = payer, space = 8 + Challenge::INIT_SPACE,
+        seeds = [b"challenge", crew.key().as_ref(), &challenge_id.to_le_bytes()], bump)]
+    pub challenge: Account<'info, Challenge>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct JoinChallenge<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    #[account(seeds = [b"crew", crew.creator.as_ref(), &crew.crew_id.to_le_bytes()], bump = crew.bump)]
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"crew_vault", crew.key().as_ref()], bump = crew.vault_bump)]
+    pub crew_vault: InterfaceAccount<'info, anchor_spl::token_interface::TokenAccount>,
+    #[account(mut, seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(mut, seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(init, payer = payer, space = 8 + Entry::INIT_SPACE,
+        seeds = [b"entry", challenge.key().as_ref(), owner.key().as_ref()], bump)]
+    pub entry: Account<'info, Entry>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct VoteEntry<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub owner: Signer<'info>,
+    pub crew: Account<'info, Crew>,
+    #[account(seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(mut, seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(mut, seeds = [b"entry", challenge.key().as_ref(), entry.owner.as_ref()], bump = entry.bump, has_one = challenge)]
+    pub entry: Account<'info, Entry>,
+    #[account(init, payer = payer, space = 8 + Vote::INIT_SPACE,
+        seeds = [b"vote", entry.key().as_ref(), owner.key().as_ref()], bump)]
+    pub vote: Account<'info, Vote>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimChallenge<'info> {
+    pub owner: Signer<'info>,
+    pub crew: Account<'info, Crew>,
+    #[account(mut, seeds = [b"member", crew.key().as_ref(), owner.key().as_ref()], bump = member.bump, has_one = owner, has_one = crew)]
+    pub member: Account<'info, Member>,
+    #[account(seeds = [b"challenge", crew.key().as_ref(), &challenge.challenge_id.to_le_bytes()], bump = challenge.bump, has_one = crew)]
+    pub challenge: Account<'info, Challenge>,
+    #[account(mut, seeds = [b"entry", challenge.key().as_ref(), owner.key().as_ref()], bump = entry.bump, has_one = owner, has_one = challenge)]
+    pub entry: Account<'info, Entry>,
+}
+
+// ---------------------------------------------------------------- events
+
+#[event]
+pub struct BetCreated { pub bet: Pubkey, pub crew: Pubkey, pub question: String, pub closes_at: i64 }
+#[event]
+pub struct BetPlaced { pub bet: Pubkey, pub owner: Pubkey, pub side: u8, pub shares: u64 }
+#[event]
+pub struct BetResolved { pub bet: Pubkey, pub outcome: u8 }
+#[event]
+pub struct BetClaimed { pub bet: Pubkey, pub owner: Pubkey, pub shares: u64 }
+#[event]
+pub struct ChallengeCreated { pub challenge: Pubkey, pub crew: Pubkey, pub title: String, pub stake: u64, pub ends_at: i64 }
+#[event]
+pub struct ChallengeJoined { pub challenge: Pubkey, pub owner: Pubkey, pub shares: u64 }
+#[event]
+pub struct EntryDecided { pub challenge: Pubkey, pub owner: Pubkey, pub status: u8 }
+#[event]
+pub struct ChallengeClaimed { pub challenge: Pubkey, pub owner: Pubkey, pub shares: u64 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn majority_is_strict() {
+        assert_eq!(majority(1), 1);
+        assert_eq!(majority(2), 2);
+        assert_eq!(majority(3), 2);
+        assert_eq!(majority(4), 3);
+        assert_eq!(majority(5), 3);
+    }
+
+    #[test]
+    fn winners_split_losers_pro_rata_and_shares_are_conserved() {
+        // Yes: 30 + 10, No: 60. Yes wins.
+        let (w, l) = (40u64, 60u64);
+        let a = winner_payout(30, w, l).unwrap();
+        let b = winner_payout(10, w, l).unwrap();
+        assert_eq!(a, 30 + 45);
+        assert_eq!(b, 10 + 15);
+        assert!(a + b <= w + l); // S1: never pays out more than was locked
+    }
+
+    #[test]
+    fn rounding_never_creates_shares() {
+        let (w, l) = (3u64, 10u64);
+        let total: u64 = [1u64, 1, 1].iter().map(|s| winner_payout(*s, w, l).unwrap()).sum();
+        assert!(total <= w + l);
+    }
+
+    #[test]
+    fn nobody_won_means_refund() {
+        assert_eq!(winner_payout(25, 0, 100).unwrap(), 25);
+    }
+}

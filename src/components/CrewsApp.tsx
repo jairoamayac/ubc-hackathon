@@ -1,10 +1,10 @@
 "use client";
 
-import {
-  ArrowDownRight, ArrowLeft, ArrowUpRight, Crown, Flame, Home, Loader2, Lock, Plus, ShieldCheck, Trophy, User, Users, X, Zap,
-} from "lucide-react";
+import { ArrowLeft, Crown, Flame, Home, Loader2, Lock, Plus, ShieldCheck, Trophy, User, X } from "lucide-react";
+import { PublicKey } from "@solana/web3.js";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
+import { CrewRoom } from "./CrewRoom";
 import { Logo } from "./Logo";
 import { Onboarding } from "./Onboarding";
 import { usd } from "./ui";
@@ -14,8 +14,7 @@ type Sheet =
   | null
   | { id: "applepay" }
   | { id: "deposit"; crew: CrewView }
-  | { id: "withdraw"; crew: CrewView }
-  | { id: "tryhard"; crew: CrewView };
+  | { id: "withdraw"; crew: CrewView };
 
 const EMOJIS = ["🤠", "🔥", "🏠", "🎓", "🏀", "✈️", "🌮", "💎"];
 const YEAR = 31_536_000;
@@ -28,11 +27,34 @@ export default function CrewsApp() {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
+
+  // Toasts clear themselves (errors stay a little longer).
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), toast.tone === "ok" ? 3500 : 7000);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [now, setNow] = useState(0);
 
   useEffect(() => {
     LiveClient.connect().then(setClient).catch((e: Error) => setToast({ text: e.message, tone: "err" }));
+    // Invite links: /?crew=<address> opens that crew so a friend can join in one tap.
+    const invited = new URLSearchParams(location.search).get("crew");
+    if (invited) {
+      try {
+        const key = new PublicKey(invited).toBase58();
+        setTimeout(() => setView({ id: "crew", key }), 0);
+      } catch {
+        /* not a crew link */
+      }
+    }
   }, []);
+
+  // Your name lives on-chain (sponsored) so the crew sees "Leo", never an address.
+  useEffect(() => {
+    if (!client || !name || localStorage.getItem("hm.profile") === name) return;
+    client.setProfile(name).then(() => localStorage.setItem("hm.profile", name)).catch(() => {});
+  }, [client, name]);
 
   const refresh = useCallback(async () => {
     if (!client) return;
@@ -171,11 +193,11 @@ export default function CrewsApp() {
             <Row k="Saved in crews" v={usd(savings)} />
             <Row k="Cash" v={usd(snap.cash)} />
             <Row k="Crews" v={String(myCrews.length)} />
-            <Row k="Calls played" v={String(myCrews.reduce((s, c) => s + c.me!.member.callsPlayed, 0))} />
+
           </div>
           <div className="card space-y-2 p-5 text-sm font-semibold text-muted">
             <p className="flex items-center gap-2 font-extrabold text-ink"><Lock className="h-4 w-4" /> How your money is protected</p>
-            <p>Your savings sit in your crew&apos;s pot and only you can take your part out. Tryhard mode can only use what your crew earned, never what you put in. Those rules are enforced by the app&apos;s code, not by a promise.</p>
+            <p>Your savings sit in your crew&apos;s pot and only you can take your part out. Money only moves between friends when you put it on a bet or a challenge, and only after the crew votes. Those rules are enforced by the app&apos;s code, not by a promise.</p>
             <p className="pt-1 text-xs">Demo on test dollars. Earnings run at {snap.config.apyBps / 100}% a year, sped up {snap.config.timeWarp.toLocaleString()}x so you can watch them grow.</p>
           </div>
           <button onClick={() => setName("")} className="btn btn-quiet py-3">Change name</button>
@@ -189,18 +211,22 @@ export default function CrewsApp() {
             if (okay) setView({ id: "home" });
           }}
         />
-      ) : crew ? (
-        <CrewScreen
+      ) : crew && client ? (
+        <CrewRoom
+          client={client}
           crew={crew}
           snap={snap}
           now={now}
           rank={rankOf(snap, crew)}
           busy={busy}
-          onBack={() => setView({ id: "home" })}
+          value={liveValue(crew, snap, now)}
+          act={act}
+          onBack={() => {
+            history.replaceState(null, "", location.pathname);
+            setView({ id: "home" });
+          }}
           onDeposit={() => setSheet({ id: "deposit", crew })}
           onWithdraw={() => setSheet({ id: "withdraw", crew })}
-          onTryhard={() => setSheet({ id: "tryhard", crew })}
-          onSettle={() => act("settle", () => client!.settle(crew.address), "Call settled. Your crew got the result.")}
         />
       ) : (
         <Page><p className="font-bold text-muted">Crew not found.</p></Page>
@@ -224,7 +250,12 @@ export default function CrewsApp() {
               if (await act("topup", () => client!.topUp(amt), `${usd(amt)} added to your cash.`)) setSheet(null);
             }} />
           )}
-          {sheet.id === "deposit" && (
+          {sheet.id === "deposit" && snap.cash < 0.01 && (
+            <ApplePay busy={busy === "topup"} onPay={async (amt) => {
+              await act("topup", () => client!.topUp(amt), `${usd(amt)} added. Now send it to ${sheet.crew.name}.`);
+            }} />
+          )}
+          {sheet.id === "deposit" && snap.cash >= 0.01 && (
             <AmountSheet title={`Send to ${sheet.crew.emoji} ${sheet.crew.name}`} max={snap.cash} cta="Send" busy={busy === "deposit"}
               hint={snap.cash === 0 ? "Add money with Apple Pay first." : `You have ${usd(snap.cash)} in cash.`}
               onSubmit={async (amt) => {
@@ -238,11 +269,6 @@ export default function CrewsApp() {
                 const all = amt >= sheet.crew.me!.value - 0.000001;
                 if (await act("withdraw", () => client!.withdraw(sheet.crew, all ? "all" : amt), `${usd(amt)} back in your cash.`)) setSheet(null);
               }} />
-          )}
-          {sheet.id === "tryhard" && sheet.crew.me && (
-            <Tryhard crew={sheet.crew} snap={snap} busy={busy === "call"} onLock={async (dir, boost, stake) => {
-              if (await act("call", () => client!.openCall(sheet.crew.address, dir, boost, stake), "Call locked in. Good luck.")) setSheet(null);
-            }} />
           )}
         </SheetFrame>
       )}
@@ -335,87 +361,6 @@ function CrewRow({ crew, snap, now, rank, onOpen, mine }: { crew: CrewView; snap
   );
 }
 
-function CrewScreen(props: {
-  crew: CrewView; snap: Snapshot; now: number; rank: number; busy: string | null;
-  onBack: () => void; onDeposit: () => void; onWithdraw: () => void; onTryhard: () => void; onSettle: () => void;
-}) {
-  const { crew, snap, now, rank, busy } = props;
-  const me = crew.me;
-  const call = snap.call && snap.callCrew?.equals(crew.address) ? snap.call : undefined;
-  const value = liveValue(crew, snap, now);
-  const earned = me ? value - me.principal : 0;
-  const playable = me ? Math.max(0, earned) : 0;
-  const potNow = crew.vault + pending(crew, snap, now);
-  return (
-    <Page>
-      <button onClick={props.onBack} className="flex items-center gap-1 self-start font-bold text-muted"><ArrowLeft className="h-5 w-5" /> Back</button>
-      <section className="sun relative overflow-hidden rounded-[28px] bg-ink p-6 text-paper">
-        <p className="text-4xl">{crew.emoji}</p>
-        <h1 className="mt-2 text-[32px] font-extrabold leading-tight tracking-tight">{crew.name}</h1>
-        <p className="text-sm font-bold text-paper/70">#{rank} on the leaderboard · {plural(crew.members)}</p>
-        <p className="mt-5 text-sm font-bold text-paper/70">{me ? "Your part" : "In the pot"}</p>
-        <p className="text-[40px] font-extrabold leading-none tracking-tight tabular-nums">{usd(me ? value : potNow)}</p>
-        {me ? (
-          <p className="mt-2 text-sm font-extrabold text-sun">+${earned.toFixed(6)} earned on {usd(me.principal)} saved</p>
-        ) : (
-          <p className="mt-2 text-sm font-extrabold text-sun">This crew earns ${(crew.yieldPerDay / 1440).toFixed(3)} every minute. You&apos;re not in it yet.</p>
-        )}
-      </section>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4"><p className="text-xs font-bold text-muted">Crew pot</p><p className="text-lg font-extrabold tabular-nums">{usd(potNow)}</p></div>
-        <div className="card p-4"><p className="text-xs font-bold text-muted">Grew</p><p className="text-lg font-extrabold text-gain">+{liveGrowth(crew, snap, now).toFixed(3)}%</p></div>
-      </div>
-
-      {me ? (
-        <div className="grid grid-cols-[1fr_auto] gap-3">
-          <button onClick={props.onDeposit} className="btn btn-primary py-4 text-lg">Add to crew</button>
-          <button onClick={props.onWithdraw} disabled={!!call} className="btn btn-quiet px-5 py-4">Take out</button>
-        </div>
-      ) : (
-        <button onClick={props.onDeposit} className="btn btn-primary py-4 text-lg"><Users className="h-5 w-5" /> Join and add money</button>
-      )}
-
-      {me && call ? (
-        <OpenCall call={call} snap={snap} now={now} busy={busy === "settle"} onSettle={props.onSettle} />
-      ) : me ? (
-        <button onClick={props.onTryhard} disabled={playable < 0.00001} className="card flex items-center gap-3 p-4 text-left disabled:opacity-60">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-ember text-paper"><Zap className="h-5 w-5" /></span>
-          <span className="flex-1">
-            <span className="block font-extrabold">Tryhard mode</span>
-            <span className="text-xs font-bold text-muted">
-              {playable >= 0.00001 ? `Play the $${playable.toFixed(4)} your crew earned you. Never your savings.` : "Unlocks once your crew earns something."}
-            </span>
-          </span>
-        </button>
-      ) : null}
-    </Page>
-  );
-}
-
-function OpenCall({ call, snap, now, busy, onSettle }: { call: NonNullable<Snapshot["call"]>; snap: Snapshot; now: number; busy: boolean; onSettle: () => void }) {
-  const entry = Number(call.entryPrice) * 10 ** call.expo;
-  const left = Math.max(0, Math.ceil(call.expiresAt - now));
-  const sign = call.direction === 0 ? 1 : -1;
-  const move = ((snap.sol.price - entry) / entry) * sign;
-  const stake = Number(call.stake) / 1e6;
-  const result = Math.max(-stake, Math.min(stake * snap.config.maxWinMultiple, stake * call.boost * move));
-  return (
-    <div className="card space-y-3 p-5">
-      <p className="flex items-center gap-2 font-extrabold"><Zap className="h-4 w-4 text-ember" /> Your call: SOL {call.direction === 0 ? "up" : "down"} · {call.boost}x</p>
-      <Row k="Played" v={`$${stake.toFixed(6)}`} />
-      <Row k="SOL when you called" v={`$${entry.toFixed(2)}`} />
-      <Row k="SOL now" v={`$${snap.sol.price.toFixed(2)}`} />
-      <p className={`flex justify-between font-extrabold ${result >= 0 ? "text-gain" : "text-ember-text"}`}><span>Right now</span>{result >= 0 ? "+" : "−"}${Math.abs(result).toFixed(6)}</p>
-      {left > 0 ? (
-        <p className="text-sm font-bold text-muted">Settles in {left}s with the market price.</p>
-      ) : (
-        <button onClick={onSettle} disabled={busy} className="btn btn-ink w-full py-3">{busy ? "Settling…" : "Settle my call"}</button>
-      )}
-    </div>
-  );
-}
-
 function NewCrew({ onCreate, onBack, busy }: { onCreate: (name: string, emoji: string) => void; onBack: () => void; busy: boolean }) {
   const [n, setN] = useState("");
   const [e, setE] = useState(EMOJIS[0]);
@@ -491,41 +436,6 @@ function AmountSheet({ title, max, cta, hint, busy, onSubmit }: { title: string;
       </div>
       <p className="text-sm font-semibold text-muted">{hint}</p>
       <button disabled={!valid || busy} onClick={() => onSubmit(Math.min(n, max))} className="btn btn-primary w-full py-4 text-lg">{busy ? "Working…" : cta}</button>
-    </div>
-  );
-}
-
-function Tryhard({ crew, snap, busy, onLock }: { crew: CrewView; snap: Snapshot; busy: boolean; onLock: (dir: 0 | 1, boost: number, stake: number) => void }) {
-  const [dir, setDir] = useState<0 | 1>(0);
-  const [boost, setBoost] = useState(2);
-  const [stake] = useState(() => {
-    const earned = liveValue(crew, snap, Date.now() / 1000) - crew.me!.principal;
-    return Math.floor(Math.max(0, earned) * 0.98 * 1e6) / 1e6; // leave dust for rounding
-  });
-  const ko = 100 / boost;
-  return (
-    <div className="space-y-4">
-      <p className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-widest text-ember-text"><Zap className="h-4 w-4" /> Tryhard mode</p>
-      <h2 className="text-2xl font-extrabold leading-tight tracking-tight">SOL is ${snap.sol.price.toFixed(2)}. Up or down in {snap.config.callDuration}s?</h2>
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => setDir(0)} aria-pressed={dir === 0} className="tile flex items-center justify-center gap-2 py-4 text-lg font-extrabold"><ArrowUpRight className="h-5 w-5" /> Up</button>
-        <button onClick={() => setDir(1)} aria-pressed={dir === 1} className="tile flex items-center justify-center gap-2 py-4 text-lg font-extrabold"><ArrowDownRight className="h-5 w-5" /> Down</button>
-      </div>
-      <div>
-        <p className="mb-2 text-sm font-bold text-muted">Boost</p>
-        <div className="grid grid-cols-5 gap-2">
-          {Array.from({ length: snap.config.maxBoost }, (_, i) => i + 1).map((b) => (
-            <button key={b} onClick={() => setBoost(b)} aria-pressed={boost === b} className="tile py-3 font-extrabold">{b}x</button>
-          ))}
-        </div>
-      </div>
-      <div className="card space-y-2 p-4 text-sm font-bold">
-        <Row k="You play" v={`$${stake.toFixed(6)}`} />
-        <Row k="Best case" v={`+$${(stake * snap.config.maxWinMultiple).toFixed(6)}`} />
-        <Row k="Knocked out if SOL moves" v={`${ko.toFixed(0)}% against you`} />
-        <p className="flex items-center gap-2 text-gain"><ShieldCheck className="h-4 w-4" /> Your {usd(crew.me!.principal)} saved can&apos;t be touched.</p>
-      </div>
-      <button disabled={busy || stake <= 0} onClick={() => onLock(dir, boost, stake)} className="btn btn-primary w-full py-4 text-lg">{busy ? "Locking…" : "Lock it in"}</button>
     </div>
   );
 }

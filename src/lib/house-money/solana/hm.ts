@@ -233,3 +233,136 @@ export async function confirm(conn: Connection, signature: string, lastValidBloc
   }
   throw new Error("Network is slow, try again.");
 }
+
+// ================================================================ social layer (programs/house_money/src/social.rs)
+
+const SOCIAL_IX = {
+  set_profile: [221, 221, 195, 121, 133, 71, 113, 170],
+  create_bet: [197, 42, 153, 2, 59, 63, 143, 246],
+  place_bet: [222, 62, 67, 220, 63, 166, 126, 33],
+  vote_bet: [192, 213, 112, 35, 108, 39, 253, 142],
+  claim_bet: [60, 61, 185, 215, 180, 119, 174, 126],
+  create_challenge: [170, 244, 47, 1, 1, 15, 173, 239],
+  join_challenge: [41, 104, 214, 73, 32, 168, 76, 79],
+  vote_entry: [153, 149, 139, 2, 39, 46, 186, 44],
+  claim_challenge: [132, 167, 9, 45, 203, 244, 30, 171],
+} as const;
+export const SOCIAL_ACCOUNT_DISC = {
+  Profile: [184, 101, 165, 188, 95, 63, 127, 188],
+  Bet: [147, 23, 35, 59, 15, 75, 155, 32],
+  Position: [170, 188, 143, 228, 122, 64, 247, 208],
+  Challenge: [119, 250, 161, 121, 119, 81, 22, 208],
+  Entry: [63, 18, 152, 113, 215, 246, 221, 250],
+  Vote: [96, 91, 104, 57, 145, 35, 172, 155],
+} as const;
+/** Discriminators of social instructions where account #0 only pays rent (used by the edge API). */
+export const SOCIAL_PAYER_IXS = [
+  SOCIAL_IX.set_profile, SOCIAL_IX.create_bet, SOCIAL_IX.place_bet, SOCIAL_IX.vote_bet,
+  SOCIAL_IX.create_challenge, SOCIAL_IX.join_challenge, SOCIAL_IX.vote_entry,
+].map((d) => d.join(","));
+
+export const OUTCOME = { OPEN: 0, YES: 1, NO: 2 } as const;
+export const ENTRY = { PENDING: 0, PASSED: 1, FAILED: 2 } as const;
+export const NOBODY = PublicKey.default;
+
+export const profilePda = (owner: PublicKey) => pda([enc("profile"), owner.toBytes()]);
+export const betPda = (crew: PublicKey, betId: bigint) => pda([enc("bet"), crew.toBytes(), le64(betId)]);
+export const positionPda = (bet: PublicKey, owner: PublicKey) => pda([enc("position"), bet.toBytes(), owner.toBytes()]);
+export const challengePda = (crew: PublicKey, id: bigint) => pda([enc("challenge"), crew.toBytes(), le64(id)]);
+export const entryPda = (challenge: PublicKey, owner: PublicKey) => pda([enc("entry"), challenge.toBytes(), owner.toBytes()]);
+export const votePda = (target: PublicKey, voter: PublicKey) => pda([enc("vote"), target.toBytes(), voter.toBytes()]);
+
+export interface ProfileAccount { address: PublicKey; owner: PublicKey; name: string }
+export interface BetAccount {
+  address: PublicKey; crew: PublicKey; creator: PublicKey; betId: bigint; question: string; subject: PublicKey;
+  closesAt: number; yesShares: bigint; noShares: bigint; bettors: number; yesVotes: number; noVotes: number; outcome: number;
+}
+export interface PositionAccount { address: PublicKey; bet: PublicKey; owner: PublicKey; side: number; shares: bigint; claimed: boolean }
+export interface ChallengeAccount {
+  address: PublicKey; crew: PublicKey; creator: PublicKey; challengeId: bigint; title: string; stake: bigint; endsAt: number;
+  participants: number; decided: number; passedShares: bigint; failedShares: bigint;
+}
+export interface EntryAccount {
+  address: PublicKey; challenge: PublicKey; owner: PublicKey; shares: bigint; passVotes: number; failVotes: number; status: number; claimed: boolean;
+}
+
+export function decodeProfile(address: PublicKey, d: Uint8Array): ProfileAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Profile)) throw new Error("not a Profile account");
+  const r = new R(d);
+  return { address, owner: r.pk(), name: r.str() };
+}
+export function decodeBet(address: PublicKey, d: Uint8Array): BetAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Bet)) throw new Error("not a Bet account");
+  const r = new R(d);
+  return {
+    address, crew: r.pk(), creator: r.pk(), betId: r.u64(), question: r.str(), subject: r.pk(), closesAt: Number(r.i64()),
+    yesShares: r.u64(), noShares: r.u64(), bettors: r.u16(), yesVotes: r.u16(), noVotes: r.u16(), outcome: r.u8(),
+  };
+}
+export function decodePosition(address: PublicKey, d: Uint8Array): PositionAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Position)) throw new Error("not a Position account");
+  const r = new R(d);
+  return { address, bet: r.pk(), owner: r.pk(), side: r.u8(), shares: r.u64(), claimed: r.bool() };
+}
+export function decodeChallenge(address: PublicKey, d: Uint8Array): ChallengeAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Challenge)) throw new Error("not a Challenge account");
+  const r = new R(d);
+  return {
+    address, crew: r.pk(), creator: r.pk(), challengeId: r.u64(), title: r.str(), stake: r.u64(), endsAt: Number(r.i64()),
+    participants: r.u16(), decided: r.u16(), passedShares: r.u64(), failedShares: r.u64(),
+  };
+}
+export function decodeEntry(address: PublicKey, d: Uint8Array): EntryAccount {
+  if (!isAccount(d, SOCIAL_ACCOUNT_DISC.Entry)) throw new Error("not an Entry account");
+  const r = new R(d);
+  return {
+    address, challenge: r.pk(), owner: r.pk(), shares: r.u64(), passVotes: r.u16(), failVotes: r.u16(), status: r.u8(), claimed: r.bool(),
+  };
+}
+
+/** Mirrors social::winner_payout. */
+export function winnerPayout(own: bigint, winnersTotal: bigint, losersTotal: bigint) {
+  return winnersTotal === 0n ? own : own + (losersTotal * own) / winnersTotal;
+}
+
+export function setProfileIx(payer: PublicKey, owner: PublicKey, name: string) {
+  return ix([m(payer, true, true), m(owner, false, true), m(profilePda(owner), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.set_profile).str(name).done());
+}
+export function createBetIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, betId: bigint, question: string, subject: PublicKey, closesAt: number) {
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner)), m(betPda(crew, betId), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.create_bet).u64(betId).str(question).bytes(subject.toBytes()).i64(BigInt(closesAt)).done());
+}
+export function placeBetIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, bet: PublicKey, side: 1 | 2, shares: bigint) {
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner), true), m(bet, true),
+    m(positionPda(bet, owner), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.place_bet).u8(side).u64(shares).done());
+}
+export function voteBetIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, bet: PublicKey, choice: 1 | 2) {
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner)), m(bet, true),
+    m(votePda(bet, owner), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.vote_bet).u8(choice).done());
+}
+export function claimBetIx(owner: PublicKey, crew: PublicKey, bet: PublicKey) {
+  return ix([m(owner, false, true), m(crew), m(memberPda(crew, owner), true), m(bet), m(positionPda(bet, owner), true)],
+    new W().bytes(SOCIAL_IX.claim_bet).done());
+}
+export function createChallengeIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, id: bigint, title: string, stake: bigint, endsAt: number) {
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner)), m(challengePda(crew, id), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.create_challenge).u64(id).str(title).u64(stake).i64(BigInt(endsAt)).done());
+}
+export function joinChallengeIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey) {
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(crewVaultPda(crew)), m(memberPda(crew, owner), true),
+    m(challenge, true), m(entryPda(challenge, owner), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.join_challenge).done());
+}
+export function voteEntryIx(payer: PublicKey, owner: PublicKey, crew: PublicKey, challenge: PublicKey, entryOwner: PublicKey, passed: boolean) {
+  const entry = entryPda(challenge, entryOwner);
+  return ix([m(payer, true, true), m(owner, false, true), m(crew), m(memberPda(crew, owner)), m(challenge, true), m(entry, true),
+    m(votePda(entry, owner), true), m(SystemProgram.programId)],
+    new W().bytes(SOCIAL_IX.vote_entry).u8(passed ? 1 : 0).done());
+}
+export function claimChallengeIx(owner: PublicKey, crew: PublicKey, challenge: PublicKey) {
+  return ix([m(owner, false, true), m(crew), m(memberPda(crew, owner), true), m(challenge), m(entryPda(challenge, owner), true)],
+    new W().bytes(SOCIAL_IX.claim_challenge).done());
+}

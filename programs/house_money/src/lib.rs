@@ -12,6 +12,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, TransferChecked};
 
+pub mod social;
+pub use social::*;
+
 declare_id!("9iBNS61WwCQdZAhBntKE3vwhyQBYqyo1UGDvZDVjd6Ht");
 
 /// Pyth Solana Receiver program (owner of PriceUpdateV2 accounts).
@@ -307,6 +310,51 @@ pub mod house_money {
         ctx.accounts.crew.total_shares = ctx.accounts.crew.total_shares.checked_add(minted).ok_or(HmError::MathOverflow)?;
         emit!(CallSettled { member: m.key(), exit_price: exit.price, stake: ctx.accounts.call.stake, payout });
         Ok(())
+    }
+
+    // ------------------------------------------------------------ social layer (see social.rs)
+
+    /// Display name shown to the crew (people never see addresses).
+    pub fn set_profile(ctx: Context<SetProfile>, name: String) -> Result<()> {
+        social::set_profile_handler(ctx, name)
+    }
+
+    /// A yes/no bet about a real-life moment ("¿Alex llega al vuelo?"). `subject` can't vote.
+    pub fn create_bet(ctx: Context<CreateBet>, bet_id: u64, question: String, subject: Pubkey, closes_at: i64) -> Result<()> {
+        social::create_bet_handler(ctx, bet_id, question, subject, closes_at)
+    }
+
+    /// Lock crew shares on a side until the crew decides. One position per person per bet.
+    pub fn place_bet(ctx: Context<PlaceBet>, side: u8, shares: u64) -> Result<()> {
+        social::place_bet_handler(ctx, side, shares)
+    }
+
+    /// The crew votes what happened; a strict majority settles it.
+    pub fn vote_bet(ctx: Context<VoteBet>, choice: u8) -> Result<()> {
+        social::vote_bet_handler(ctx, choice)
+    }
+
+    /// Winners take their stake plus a pro-rata share of the losers' stakes.
+    pub fn claim_bet(ctx: Context<ClaimBet>) -> Result<()> {
+        social::claim_bet_handler(ctx)
+    }
+
+    /// A challenge with a stake per person: whoever fails pays the ones who complete it.
+    pub fn create_challenge(ctx: Context<CreateChallenge>, challenge_id: u64, title: String, stake: u64, ends_at: i64) -> Result<()> {
+        social::create_challenge_handler(ctx, challenge_id, title, stake, ends_at)
+    }
+
+    pub fn join_challenge(ctx: Context<JoinChallenge>) -> Result<()> {
+        social::join_challenge_handler(ctx)
+    }
+
+    /// The crew votes whether each participant completed the challenge (not on their own entry).
+    pub fn vote_entry(ctx: Context<VoteEntry>, passed: bool) -> Result<()> {
+        social::vote_entry_handler(ctx, passed)
+    }
+
+    pub fn claim_challenge(ctx: Context<ClaimChallenge>) -> Result<()> {
+        social::claim_challenge_handler(ctx)
     }
 }
 
@@ -740,6 +788,20 @@ pub enum HmError {
     BadConfig,
     #[msg("Math overflow.")]
     MathOverflow,
+    #[msg("The deadline must be in the future.")]
+    BadDeadline,
+    #[msg("Betting is closed.")]
+    BetClosed,
+    #[msg("Voting opens when the bet closes.")]
+    BetStillOpen,
+    #[msg("Already decided.")]
+    AlreadyDecided,
+    #[msg("You can't vote on yourself.")]
+    SubjectCantVote,
+    #[msg("Not decided yet.")]
+    NotDecided,
+    #[msg("Already claimed.")]
+    AlreadyClaimed,
 }
 
 #[cfg(test)]
