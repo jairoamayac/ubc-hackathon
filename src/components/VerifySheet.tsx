@@ -68,7 +68,7 @@ export function VerifySheet({ pact, onClose }: { pact: ChallengeView; onClose: (
   if (job?.status === "pending") {
     return (
       <div className="space-y-4 py-2" role="status" aria-live="polite">
-        <div className="flex items-center gap-3"><Loader2 className="h-6 w-6 animate-spin text-forest" aria-hidden /><p className="font-medium">Grok is checking @{cleanHandle} on X…</p></div>
+        <div className="flex items-center gap-3"><Loader2 className="h-6 w-6 animate-spin text-deep" aria-hidden /><p className="font-medium">Grok is checking @{cleanHandle} on X…</p></div>
         <p className="text-sm text-muted">Grok reads the public profile itself, so nobody has to vote. This can take a few minutes{waited > 0 ? ` (${Math.floor(waited / 60)}:${String(waited % 60).padStart(2, "0")} so far)` : ""}.</p>
       </div>
     );
@@ -86,14 +86,14 @@ export function VerifySheet({ pact, onClose }: { pact: ChallengeView; onClose: (
     const kept = job.verdict === "KEPT";
     return (
       <div className="space-y-4" aria-live="polite">
-        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-forest"><ShieldCheck className="h-4 w-4" aria-hidden /> Checked by Grok</span>
-        <div className={`rounded-xl p-4 ${kept ? "bg-mint" : "border border-stone"}`}>
-          <p className={`flex items-center gap-2 text-lg font-medium ${kept ? "text-forest" : job.verdict === "MISSED" ? "text-danger" : ""}`}>
+        <span className="pill self-start bg-ink text-white"><ShieldCheck className="h-4 w-4" aria-hidden /> Checked by Grok</span>
+        <div className="surface-lilac p-4">
+          <p className="flex items-center gap-2 text-lg font-semibold text-deep">
             {kept ? <Check className="h-5 w-5" aria-hidden /> : job.verdict === "MISSED" ? <X className="h-5 w-5" aria-hidden /> : null}
             {LABEL[job.verdict]}
           </p>
           {job.observed && <p className="mt-1 text-sm">Grok saw: {job.observed}</p>}
-          {job.checked_at && <p className="text-xs text-muted">Checked {job.checked_at}</p>}
+          {job.checked_at && <p className="text-xs text-deep/80">Checked {job.checked_at}</p>}
         </div>
         {job.reason && <p className="text-sm text-muted">{job.reason}</p>}
         <p className="text-sm text-muted">This is a public data check, not a payout. Show it to your group; your money moves only when the pact settles.</p>
@@ -104,14 +104,14 @@ export function VerifySheet({ pact, onClose }: { pact: ChallengeView; onClose: (
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">For goals anyone can check in public, like followers on X. Grok looks at the profile itself, so no vote is needed.</p>
-      <p className="rounded-xl border border-stone p-3 text-sm">Your goal: {goal}</p>
+      <p className="rounded-2xl bg-stone2 p-3 text-sm">Your goal: {goal}</p>
       <div>
         <label htmlFor="x-handle" className="mb-1 block text-sm text-muted">X handle</label>
-        <input id="x-handle" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@yourhandle" autoCapitalize="none" autoCorrect="off" className="w-full rounded-xl border border-stone bg-paper px-4 py-3" />
+        <input id="x-handle" value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@yourhandle" autoCapitalize="none" autoCorrect="off" className="w-full h-12 rounded-2xl bg-white px-4 shadow-[0_10px_28px_rgba(26,26,24,0.08)] outline-none focus:ring-2 focus:ring-deep" />
       </div>
       <div>
         <label htmlFor="x-target" className="mb-1 block text-sm text-muted">Followers you promised to reach</label>
-        <input id="x-target" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="6,000" className="w-full rounded-xl border border-stone bg-paper px-4 py-3" />
+        <input id="x-target" inputMode="numeric" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="6,000" className="w-full h-12 rounded-2xl bg-white px-4 shadow-[0_10px_28px_rgba(26,26,24,0.08)] outline-none focus:ring-2 focus:ring-deep" />
       </div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <button onClick={submit} disabled={!valid || sending} className="btn btn-primary w-full py-4 text-lg">

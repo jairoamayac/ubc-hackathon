@@ -90,10 +90,12 @@ function friendly(msg: string) {
   if (msg.includes("already in use")) return "You already did that one.";
   if (msg.includes("NotAParticipant") || msg.includes("voter_entry")) return "Only people who put money in can verify.";
   if (msg.includes("StakeTooLow")) return "Put in at least the group's minimum.";
-  if (msg.includes("PrincipalIsProtected")) return "Only what your crew earned can be played. Your savings are protected.";
+  if (msg.includes("PrincipalIsProtected")) return "That money is locked. Only free money can be used here.";
   if (msg.includes("CallNotExpired")) return "Your call is still running.";
   if (msg.includes("CallOpen")) return "Finish your open call first.";
   if (msg.includes("insufficient funds")) return "Not enough cash. Add money first.";
+  // Never show chain internals to people (brand rule: no crypto jargon).
+  if (/transaction|blockhash|signature|lamport|account|program|instruction|simulation|0x[0-9a-f]/i.test(msg)) return "Something went wrong. Try again.";
   return msg;
 }
 
