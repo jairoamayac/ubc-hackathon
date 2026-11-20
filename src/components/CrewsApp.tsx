@@ -6,7 +6,7 @@ import { ArrowLeft, ChevronRight, Home, Loader2, Plus, User, X } from "lucide-re
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { LiveClient, type CrewView, type Snapshot } from "@/lib/house-money/solana/live";
-import { PROJECT_NAME } from "@/lib/brand";
+import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
 import { Onboarding } from "./Onboarding";
 import { usd } from "@/lib/format";
@@ -176,7 +176,7 @@ export default function CrewsApp() {
               <li>1. Lock money on your own goal, for example run 21 km by Sunday, $20.</li>
               <li>2. Friends join with their own goals and money.</li>
               <li>3. When time is up, the people who put money in confirm who kept their word.</li>
-              <li>4. Kept it: your money comes back with a share of what others left. Walked away: you lose it, 95% to the friends who kept theirs, 5% to us.</li>
+              <li>4. Kept it: your money comes back with a share of what others left. Walked away: you lose it, {KEEPERS_PERCENT}% to the friends who kept theirs, {FEE_PERCENT}% to us.</li>
             </ol>
           </section>
         </Page>
@@ -191,7 +191,7 @@ export default function CrewsApp() {
           <section aria-labelledby="safe-title" className="card space-y-2 p-5 text-sm text-muted">
             <h2 id="safe-title" className="font-medium text-ink">Who holds your money</h2>
             <p>Not us, and not your friends. Money sits in your group&apos;s pot, held by code nobody can change. Only you can take out your part, and locked money moves only after the people who put money in confirm a result.</p>
-            <p>When someone walks away, 95% of their money goes to the friends who kept their word and 5% to {PROJECT_NAME}. Nothing goes anywhere else.</p>
+            <p>When someone walks away, {KEEPERS_PERCENT}% of their money goes to the friends who kept their word and {FEE_PERCENT}% to {PROJECT_NAME}. Nothing goes anywhere else.</p>
             <p className="pt-1 text-xs">Demo with test dollars. Apple Pay is simulated; no card is charged.</p>
           </section>
           <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>
@@ -430,7 +430,7 @@ function NewGroup({ onCreate, onBack, busy }: { onCreate: (name: string) => void
           {busy ? "Creating" : "Create group"}
         </button>
       </form>
-      <p className="text-xs text-muted">No wallet, no fees. We cover them.</p>
+      <p className="text-xs text-muted">No fees to think about. We cover them.</p>
     </Page>
   );
 }

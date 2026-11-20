@@ -2,7 +2,7 @@
 
 import { ArrowRight } from "lucide-react";
 import { useState } from "react";
-import { PROJECT_NAME, TAGLINE } from "@/lib/brand";
+import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, TAGLINE } from "@/lib/brand";
 
 const slides = [
   {
@@ -15,7 +15,7 @@ const slides = [
   },
   {
     title: "Keep it, and get it back.",
-    body: "Keep your word and your money comes back, plus a share of what was left behind. Walk away and you lose it: 95% goes to the friends who kept theirs, 5% to us.",
+    body: `Keep your word and your money comes back, plus a share of what was left behind. Walk away and you lose it: ${KEEPERS_PERCENT}% goes to the friends who kept theirs, ${FEE_PERCENT}% to us.`,
   },
 ];
 
@@ -55,7 +55,7 @@ export function Onboarding({ onDone }: { onDone: (name: string) => void }) {
           }}
         >
           <h1 className="text-[34px] font-medium leading-[1.1] tracking-tight">What should your friends call you?</h1>
-          <p className="text-lg text-muted">No password, no wallet. Your account is ready in a second.</p>
+          <p className="text-lg text-muted">No password to remember. Your account is ready in a second.</p>
           <label className="block">
             <span className="sr-only">First name</span>
             <input

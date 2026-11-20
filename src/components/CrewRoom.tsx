@@ -2,18 +2,19 @@
 
 // A group: the people, their money, and pacts. In a pact each person locks money on their own goal;
 // when time is up the people who put money in confirm who kept their word. Walk away and you lose it:
-// 95% to the friends who kept theirs, 5% to the platform. Everything here is a Solana transaction,
-// sponsored, with no wallet in sight.
+// the friends who kept theirs get the rest after a small platform fee (see FEE_PERCENT in lib/brand).
+// Everything here is sponsored, with no wallet in sight.
 import { Check, Clock, Link2, Loader2, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import type { ChallengeView, CrewDetail, CrewView, LiveClient, Snapshot } from "@/lib/house-money/solana/live";
 import * as hm from "@/lib/house-money/solana/hm";
-import { PROJECT_NAME } from "@/lib/brand";
+import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME, STAKE_CHIPS } from "@/lib/brand";
+import { AppealSheet } from "./AppealSheet";
 import { BackButton, Dialog, type Act } from "./CrewsApp";
 import { usd } from "@/lib/format";
 
-type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal" };
+type RoomSheet = null | { id: "start" } | { id: "join"; pact: ChallengeView } | { id: "appeal"; pact: ChallengeView };
 
 const GOAL_IDEAS = ["Run 21 km by Sunday", "Gym 3 times this week", "No takeout for 7 days", "In bed before midnight, all week"];
 const DURATIONS: [string, number][] = [["2 minutes", 2], ["1 hour", 60], ["Tonight", 360], ["1 day", 1440], ["3 days", 4320], ["1 week", 10080]];
@@ -144,7 +145,7 @@ export function CrewRoom(props: {
               <PactCard c={c} now={now} isMember={!!me} busy={busy}
                 onJoin={() => setSheet({ id: "join", pact: c })}
                 onConfirm={(owner, kept) => run("confirm", () => client.voteEntry(crew.address, c.challenge.address, owner, kept), "Thanks. Your answer is in.")}
-                onAppeal={() => setSheet({ id: "appeal" })}
+                onAppeal={() => setSheet({ id: "appeal", pact: c })}
                 onCollect={async () => {
                   const won = c.mine && c.mine.payoutUsd > c.mine.usd;
                   const ok = await run("collect", () => client.claimChallenge(crew.address, c.challenge.address, c.feeTaken),
@@ -174,13 +175,7 @@ export function CrewRoom(props: {
                 if (await run("join", () => client.joinWithGoal(crew.address, sheet.pact.challenge.address, goal, stake), `Locked ${usd(stake)} on your goal.`)) setSheet(null);
               }} />
           )}
-          {sheet.id === "appeal" && (
-            <div className="space-y-4 text-muted">
-              <p>If you think your friends got it wrong, you will be able to send proof, such as a screenshot of your run. An AI check reviews distance, date and route, and its decision is recorded with the result.</p>
-              <p className="text-ink">This part is not built yet. For now, results are decided by the people who put money in.</p>
-              <button onClick={() => setSheet(null)} className="btn btn-quiet w-full">Close</button>
-            </div>
-          )}
+          {sheet.id === "appeal" && <AppealSheet pact={sheet.pact} onClose={() => setSheet(null)} />}
         </Dialog>
       )}
     </div>
@@ -264,19 +259,7 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
 
       {open && isMember && !amIn && <button onClick={onJoin} className="btn btn-primary w-full">Lock money on my goal</button>}
 
-      {settled && (
-        <div className="rounded-xl bg-mint p-4 text-sm">
-          {lost.length === 0 ? (
-            <p>Everyone kept their word. Everyone gets their money back.</p>
-          ) : kept.length === 0 ? (
-            <p>Nobody kept their word, so everyone gets their money back. No fee is taken.</p>
-          ) : (
-            <p>
-              {lost.map((e) => (e.isMe ? "You" : e.name)).join(", ")} walked away with {usd(c.forfeitUsd)} locked. {usd(c.forfeitUsd - c.feeUsd)} goes to the friends who kept their word and {usd(c.feeUsd)} to {PROJECT_NAME}.
-            </p>
-          )}
-        </div>
-      )}
+      {settled && <ResultBreakdown c={c} lostCount={lost.length} keptCount={kept.length} />}
 
       {settled && c.mine && !c.mine.entry.claimed && (
         <div className="space-y-2">
@@ -292,13 +275,67 @@ function PactCard({ c, now, isMember, busy, onJoin, onConfirm, onAppeal, onColle
   );
 }
 
+// Who gets what once a pact is settled. Your own line uses the exact payout from the program; the others
+// use the same rule (stake back plus a pro rata share of the forfeits after the fee), so they are close
+// to the cent but computed here.
+function ResultBreakdown({ c, lostCount, keptCount }: { c: ChallengeView; lostCount: number; keptCount: number }) {
+  const refundAll = lostCount === 0 || keptCount === 0;
+  const keptStake = c.entries.filter((e) => e.entry.status === hm.ENTRY.PASSED).reduce((sum, e) => sum + e.stakeUsd, 0);
+  const share = Math.max(0, c.forfeitUsd - c.feeUsd);
+  const rows = c.entries.map((e) => {
+    const kept = e.entry.status === hm.ENTRY.PASSED;
+    const computed = refundAll ? e.stakeUsd : kept ? e.stakeUsd + (keptStake > 0 ? (share * e.stakeUsd) / keptStake : 0) : 0;
+    const payout = e.isMe && c.mine ? c.mine.payoutUsd : computed;
+    return { e, kept, payout };
+  });
+  const headline =
+    lostCount === 0
+      ? "Everyone kept their word. Everyone gets their money back."
+      : keptCount === 0
+        ? "Nobody kept their word, so everyone gets their money back. No fee is taken."
+        : `${usd(c.forfeitUsd)} was left behind. ${usd(share)} goes to the friends who kept their word and ${usd(c.feeUsd)} to ${PROJECT_NAME}.`;
+
+  return (
+    <section aria-label="Who gets what" className="rounded-xl bg-mint p-4 text-sm">
+      <p className="font-medium">{headline}</p>
+      <ul className="mt-3 divide-y divide-stone">
+        {rows.map(({ e, kept, payout }) => (
+          <li key={e.entry.address.toBase58()} className="flex items-start justify-between gap-3 py-2">
+            <span className="min-w-0">
+              <span className="block font-medium">{e.isMe ? "You" : e.name}</span>
+              <span className={`block ${kept || refundAll ? "text-forest" : "text-danger"}`}>{refundAll ? "Money back" : kept ? "Kept it" : "Walked away"}</span>
+            </span>
+            <span className="shrink-0 text-right tabular-nums">
+              <span className="block text-muted">{usd(e.stakeUsd)} in</span>
+              <span className="block font-medium">{usd(payout)} out</span>
+            </span>
+          </li>
+        ))}
+        {!refundAll && (
+          <li className="flex items-center justify-between gap-3 py-2">
+            <span className="font-medium">{PROJECT_NAME}</span>
+            <span className="tabular-nums"><span className="text-muted">{FEE_PERCENT}% fee</span> <span className="font-medium">{usd(c.feeUsd)}</span></span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
 function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
   free: number; min: number; busy: boolean; cta: string; withPactSettings?: boolean;
   onSubmit: (v: { goal: string; stake: number; minutes: number; minStake: number }) => void;
 }) {
   const [goal, setGoal] = useState("");
-  const options = useMemo(() => [5, 10, 20, 50].filter((v) => v >= min), [min]);
-  const [stake, setStake] = useState(Math.max(min, Math.min(20, Math.floor(free))));
+  const options = useMemo(() => {
+    const o: number[] = STAKE_CHIPS.filter((v) => v >= min);
+    return o.length > 0 ? o : [min];
+  }, [min]);
+  // Start on the biggest chip you can afford, preferring $20; if none fits, the smallest chip (the button then asks to add money).
+  const [stake, setStake] = useState(() => {
+    const affordable = options.filter((v) => v <= free);
+    return affordable.includes(20) ? 20 : affordable.length > 0 ? affordable[affordable.length - 1] : options[0];
+  });
   const [minutes, setMinutes] = useState(10080);
   const [minStake, setMinStake] = useState(5);
   const tooMuch = stake > free;
@@ -314,7 +351,7 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
       </div>
       <fieldset>
         <legend className="mb-2 text-sm text-muted">Money you lock{min > 1 ? ` (at least ${usd(min)})` : ""}</legend>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
           {options.map((v) => <button type="button" key={v} onClick={() => setStake(v)} aria-pressed={stake === v} className="tile min-h-12 py-2 font-medium">${v}</button>)}
         </div>
       </fieldset>
@@ -334,9 +371,12 @@ function GoalForm({ free, min, busy, cta, withPactSettings, onSubmit }: {
           </fieldset>
         </>
       )}
-      <p className="rounded-xl bg-mint p-3 text-sm text-ink">
-        Locked until your friends confirm. Keep your word and it comes back, plus a share of what others leave. Walk away and you lose it: 95% to the friends who kept theirs, 5% to {PROJECT_NAME}.
-      </p>
+      <div className="space-y-2 rounded-xl bg-mint p-4 text-sm text-ink" aria-live="polite">
+        <p className="font-medium">Before you lock {usd(stake)}</p>
+        <p><span className="font-medium text-forest">Keep your word:</span> your {usd(stake)} comes back, plus a share of what others leave.</p>
+        <p><span className="font-medium text-danger">Walk away:</span> you lose {usd(stake)}. {KEEPERS_PERCENT}% goes to the friends who kept theirs, {FEE_PERCENT}% to {PROJECT_NAME}.</p>
+        <p className="text-muted">It stays locked until the people who put money in confirm the result.</p>
+      </div>
       <button type="submit" disabled={!goal.trim() || busy || tooMuch} className="btn btn-primary w-full py-4 text-lg">
         {tooMuch ? "Add money to this group first" : busy ? "Locking" : `${cta} ${usd(stake)}`}
       </button>

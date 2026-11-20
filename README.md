@@ -4,6 +4,8 @@
 
 Kept is a commitment app for friend groups. You lock money on your own goal, your friends are the witnesses, and when time is up the people who put money in confirm who kept their word. Keep it and your money comes back, plus a share of what others left; walk away and you lose it: 95% goes to the friends who kept theirs, 5% to Kept. Money is held onchain until the group confirms, so nobody has to trust anybody. Built at UBC Hackathon 2026 (Consumer Applications, Best use of Solana).
 
+Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md); the brand rules for agents are in [`docs/branding-kit-agentes.md`](docs/branding-kit-agentes.md).
+
 - **Live demo:** https://house-money-ubc.jairoamayac.workers.dev
 - **Demo group** (open about 12 hours): https://house-money-ubc.jairoamayac.workers.dev/?crew=WUnPRfgz8KsUdFcJBYzPYQM6UpFTKxryKnFQj4NEu8a
 - **Docs:** [why it exists](docs/context.md) · [architecture](docs/architecture.md) · [decisions](docs/decisions.md) · [demo and pitch](docs/demo.md)
