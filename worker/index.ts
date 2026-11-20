@@ -61,6 +61,7 @@ const RPC_METHODS = new Set([
 ]);
 const MAX_RPC_BODY = 64 * 1024;
 const MAX_RPC_BATCH = 20;
+const RPC_TIMEOUT_MS = 8_000;
 
 /** Why a JSON-RPC call may not go through the proxy, or null if it may. */
 function vetRpc(call: unknown): string | null {
@@ -104,6 +105,10 @@ const worker = {
 
       if (url.pathname === "/api/rpc" && req.method === "POST") {
         if (!env.QUICKNODE_URL) return json({ error: "No private RPC configured." }, 404);
+        // Browsers send Origin: only our own pages may spend our RPC credits. (Scripts and servers send none;
+        // this is a deterrent, the method allowlist and QuickNode's own rate limits are the real bound.)
+        const origin = req.headers.get("origin");
+        if (origin && origin !== url.origin) return json({ error: "Not allowed from this site." }, 403);
         const text = await req.text();
         if (text.length > MAX_RPC_BODY) return json({ error: "Request too large." }, 413);
         let body: unknown;
@@ -118,7 +123,15 @@ const worker = {
           const problem = vetRpc(c);
           if (problem) return json({ error: problem }, 403);
         }
-        const upstream = await fetch(env.QUICKNODE_URL, { method: "POST", headers: { "content-type": "application/json" }, body: text });
+        // Fail fast: a hung upstream call returns 504 and the app retries it on the public RPC.
+        let upstream: Response;
+        try {
+          upstream = await fetch(env.QUICKNODE_URL, {
+            method: "POST", headers: { "content-type": "application/json" }, body: text, signal: AbortSignal.timeout(RPC_TIMEOUT_MS),
+          });
+        } catch {
+          return json({ error: "Private RPC timed out." }, 504);
+        }
         return new Response(upstream.body, {
           status: upstream.status,
           headers: { "content-type": "application/json", "cache-control": "no-store" },

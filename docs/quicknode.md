@@ -54,3 +54,25 @@ Without `QUICKNODE_URL` everything works exactly as before on the public RPC.
 - Priority Fee API add-on not enabled yet (`Method not found`): the app keeps the fixed fee. It is a free
   add-on: Endpoint → Add-ons → Solana Priority Fee API.
 - QuickNode does not hand out devnet SOL (`requestAirdrop` → "RPC faucet is closed"); use faucet.solana.com.
+
+## Hardening (QuickNode build-web3 skill, security-and-production)
+
+In the code:
+- The endpoint URL is server-side only (Worker secret); browsers only see `/api/rpc`.
+- Method allowlist, `getProgramAccounts` only for Kept, batches ≤ 20, body ≤ 64 KB.
+- Browser calls from another site are refused (`Origin` must be the app's own). A deterrent, not auth.
+- Fail fast: 8 s timeout to QuickNode in the Worker (504), 10 s in the app, then the public RPC.
+- `worker-security.mts` covers all of it: 24/24.
+
+In the QuickNode dashboard (endpoint → Security), before mainnet:
+1. **Method restrictions**: allow only the methods in `RPC_METHODS` (worker/index.ts).
+2. **Per-method rate limits**: cap `getProgramAccounts` and `sendTransaction`; endpoint-level limit too.
+3. **Separate endpoints** for local/dev, the deployed devnet demo and mainnet.
+4. **Usage alerts** on credits: the app polls, so a runaway loop shows up as a graph, not an invoice.
+5. **Rotate the token** on any leak (the devnet one was pasted in a chat: rotate after the hackathon).
+6. **Priority Fee API**: the add-on must be assigned to the endpoint (Add-ons → Priority Fee API →
+   Endpoint selection); until then `qn_estimatePriorityFees` returns "Method not found" and the app uses
+   the fixed fee.
+
+With the plugin's QuickNode MCP connected (`https://mcp.quicknode.com/mcp`), these can be applied from
+Claude Code after explicit confirmation.

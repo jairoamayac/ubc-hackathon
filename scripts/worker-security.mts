@@ -63,8 +63,9 @@ await expect("legit: top-up $25", "/api/topup", { owner: attacker.publicKey.toBa
 
 // The private RPC proxy (only when the Worker has QUICKNODE_URL): it must not become an open relay.
 if (String(cfg.rpc).endsWith("/api/rpc")) {
-  const rpc = async (name: string, body: unknown, allowed: boolean) => {
-    const r = await fetch(`${API}/api/rpc`, { method: "POST", headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) });
+  const rpc = async (name: string, body: unknown, allowed: boolean, origin?: string) => {
+    const headers: Record<string, string> = { "content-type": "application/json", ...(origin ? { origin } : {}) };
+    const r = await fetch(`${API}/api/rpc`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
     const ok = (r.status === 200) === allowed;
     ok ? pass++ : fail++;
     console.log(`  ${ok ? "✓" : "✗"} rpc: ${name} → ${r.status}`);
@@ -76,6 +77,8 @@ if (String(cfg.rpc).endsWith("/api/rpc")) {
   await rpc("a bad call hidden in a batch", [call("getSlot"), call("requestAirdrop", [attacker.publicKey.toBase58(), 1e9])], false);
   await rpc("a batch of 50", Array.from({ length: 50 }, () => call("getSlot")), false);
   await rpc("garbage", "not json", false);
+  await rpc("another website spending our credits", call("getSlot"), false, "https://evil.example");
+  await rpc("legit: the app's own page", call("getSlot"), true, new URL(API).origin);
   await rpc("legit: read an account", call("getAccountInfo", [sponsor.toBase58(), { encoding: "base64" }]), true);
   await rpc("legit: list Kept crews", call("getProgramAccounts", [hm.PROGRAM_ID.toBase58(), { encoding: "base64", dataSlice: { offset: 0, length: 0 } }]), true);
 }

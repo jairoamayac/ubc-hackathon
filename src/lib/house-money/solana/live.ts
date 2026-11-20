@@ -125,7 +125,8 @@ function rpcFetch(fallback?: string | null): typeof fetch | undefined {
   if (!fallback) return undefined;
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     try {
-      const r = await fetch(input, init);
+      // Fail fast (10 s) so a hung private RPC never freezes the app.
+      const r = await fetch(input, { ...init, signal: AbortSignal.timeout(10_000) });
       if (r.ok) return r;
     } catch {
       // fall through to the public RPC
