@@ -10,6 +10,7 @@ import { FEE_PERCENT, KEEPERS_PERCENT, PROJECT_NAME } from "@/lib/brand";
 import { CrewRoom } from "./CrewRoom";
 import { LogoMark } from "./demo/parts";
 import { Onboarding } from "./Onboarding";
+import { useAuth } from "./auth/AuthContext";
 import { usd } from "@/lib/format";
 
 type View = { id: "home" } | { id: "me" } | { id: "new" } | { id: "group"; key: string };
@@ -19,6 +20,7 @@ export type Act = (label: string, fn: () => Promise<unknown>, done?: string) => 
 const YEAR = 31_536_000;
 
 export default function CrewsApp() {
+  const auth = useAuth();
   const name = useSyncExternalStore(subscribeName, () => localStorage.getItem("hm.name") ?? "", () => null);
   const [client, setClient] = useState<LiveClient | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -35,7 +37,7 @@ export default function CrewsApp() {
   }, [toast]);
 
   useEffect(() => {
-    LiveClient.connect().then(setClient).catch((e: Error) => setToast({ text: e.message, tone: "err" }));
+    LiveClient.connect(auth.signer).then(setClient).catch((e: Error) => setToast({ text: e.message, tone: "err" }));
     // Invite links: /?crew=<address> opens that group so a friend can join in one tap.
     const invited = new URLSearchParams(location.search).get("crew");
     if (invited) {
@@ -46,7 +48,7 @@ export default function CrewsApp() {
         /* not a group link */
       }
     }
-  }, []);
+  }, [auth.signer]);
 
   // Names are stored onchain (sponsored) so friends see "Leo", never an address.
   useEffect(() => {
@@ -195,7 +197,9 @@ export default function CrewsApp() {
             <p>When someone walks away, {KEEPERS_PERCENT}% of their money goes to the friends who kept their word and {FEE_PERCENT}% to {PROJECT_NAME}. Nothing goes anywhere else.</p>
             <p className="pt-1 text-xs">Demo with test dollars. Apple Pay is simulated; no card is charged.</p>
           </section>
-          <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>
+          {auth.kind === "privy"
+            ? <button onClick={() => void auth.signOut?.()} className="btn btn-quiet">Sign out</button>
+            : <button onClick={() => setName("")} className="btn btn-quiet">Change name</button>}
         </Page>
       ) : view.id === "new" ? (
         <NewGroup
