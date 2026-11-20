@@ -37,3 +37,7 @@ Earlier iterations live in `archive/`. On-chain accounts can't be deleted; test 
 - Appeal with proof reviewed by AI, and who signs its result.
 - Default outcome when nobody confirms before a timeout.
 - Whether yield on locked money is platform revenue (team plan) or stays with users (current code).
+
+---
+
+The Grok council and product decisions from 2026-11-19 on (dated log) are in [grok-decisions.md](grok-decisions.md).
