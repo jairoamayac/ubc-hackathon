@@ -4,6 +4,7 @@
 // friends act, or "Play all" to run the whole story. Everything is simulated and labeled as such.
 import { Play, RotateCcw, SkipForward } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { coachGoal } from "@/lib/coach";
 import { initial, nextAutopilot, reducer, type Action, type DemoState } from "@/lib/demo/store";
 import { BottomNav, Shell, type DemoTab } from "./parts";
 import { LoginScreen, HomeScreen, NewGoalScreen, GroupScreen, type Route } from "./screens-a";
@@ -28,6 +29,43 @@ export function describe(a: Action | null, s: DemoState): string {
   }
 }
 
+type Jump = { route: Route; until: (s: DemoState) => boolean };
+const JUMPS: Record<string, Jump> = {
+  login: { route: "login", until: (s) => s.stage === "login" },
+  start: { route: "home", until: (s) => s.stage === "empty" },
+  new: { route: "new", until: (s) => s.stage === "empty" },
+  group: { route: "group", until: (s) => s.stage === "running" },
+  home: { route: "home", until: (s) => s.stage === "running" && s.hoursLeft <= 20 },
+  goal: { route: "goal", until: (s) => s.stage === "running" && s.hoursLeft <= 20 },
+  feed: { route: "feed", until: (s) => s.stage === "proof" && s.votes.approve.length > 0 },
+  vote: { route: "vote", until: (s) => s.stage === "proof" && s.votes.approve.length > 0 },
+  dispute: { route: "dispute", until: (s) => s.stage === "disputed" },
+  appeal: { route: "dispute", until: (s) => s.stage === "appeal" && s.disputeStep >= 2 },
+  verdict: { route: "dispute", until: (s) => s.stage === "proposed" },
+  results: { route: "results", until: (s) => s.stage === "ended" },
+  me: { route: "me", until: (s) => s.stage === "ended" },
+};
+
+/** The actions that take a fresh demo to the first state matching `until`. */
+function playTo(until: (s: DemoState) => boolean): Action[] {
+  const out: Action[] = [];
+  let st = initial();
+  const step = (a: Action) => { out.push(a); st = reducer(st, a); };
+  for (let i = 0; i < 40 && !until(st); i++) {
+    if (st.stage === "login") step({ type: "signIn", email: "martin@example.com" });
+    else if (st.stage === "empty") {
+      const c = coachGoal("Run 21 km by Sunday");
+      step({ type: "lockGoal", goal: c.goal, stake: c.stake, coachNote: c.note });
+    }
+    else {
+      const a = nextAutopilot(st);
+      if (!a) break;
+      step(a);
+    }
+  }
+  return out;
+}
+
 function routeAfter(a: Action): Route | null {
   switch (a.type) {
     case "friendJoin": return "group";
@@ -50,6 +88,19 @@ export default function DemoApp() {
   }, [s]);
 
   const go = useCallback((r: Route) => setRoute(r), []);
+
+  // Deep links for the pitch and for screenshots: /demo?at=goal opens that screen with the story played up
+  // to that point (same reducer and autopilot as the live walkthrough, nothing is faked on the side).
+  useEffect(() => {
+    const at = new URLSearchParams(location.search).get("at");
+    const plan = at ? JUMPS[at] : undefined;
+    if (!plan) return;
+    const t = setTimeout(() => {
+      for (const a of playTo(plan.until)) d(a);
+      setRoute(plan.route);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const advance = useCallback(() => {
     const a = nextAutopilot(sRef.current);
@@ -117,24 +168,24 @@ export default function DemoApp() {
   }
 
   return (
-    <Shell>
+    <Shell tone={route === "login" ? "lilac" : "paper"}>
       {screen}
-      {showNav && tab && <BottomNav tab={tab} onTab={(t) => setRoute(t === "me" ? "me" : t === "group" ? "group" : "home")} />}
-      <div className="sticky bottom-0 z-20 px-4 pb-3 pt-2">
+      <div className={`sticky bottom-0 z-20 space-y-2 px-4 pb-3 pt-6 ${route === "login" ? "" : "bg-linear-to-t from-paper via-paper/90 to-transparent"}`}>
         {panel ? (
-          <section aria-label="Demo controls" className="rounded-xl border border-stone bg-paper p-3 text-sm">
-            <p className="text-xs uppercase tracking-widest text-muted">Demo controls · simulated</p>
+          <section aria-label="Demo controls" className="rounded-[20px] bg-white p-3 text-sm shadow-[0_12px_28px_rgba(46,34,96,0.18)]">
+            <p className="mono text-xs uppercase tracking-widest text-muted">Demo controls · simulated</p>
             <p className="mt-1">{describe(next, s)}</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <button onClick={advance} disabled={!next} className="btn btn-primary min-h-10 px-2 text-sm"><SkipForward className="h-4 w-4" aria-hidden /> Next (D)</button>
-              <button onClick={() => setAuto((v) => !v)} disabled={!next && !auto} aria-pressed={auto} className="btn btn-quiet min-h-10 px-2 text-sm"><Play className="h-4 w-4" aria-hidden /> {auto ? "Pause" : "Play all"}</button>
-              <button onClick={reset} className="btn btn-quiet min-h-10 px-2 text-sm"><RotateCcw className="h-4 w-4" aria-hidden /> Reset</button>
+              <button onClick={advance} disabled={!next} className="btn btn-ink min-h-10 rounded-xl px-2 text-sm"><SkipForward className="h-4 w-4" aria-hidden /> Next (D)</button>
+              <button onClick={() => setAuto((v) => !v)} disabled={!next && !auto} aria-pressed={auto} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><Play className="h-4 w-4" aria-hidden /> {auto ? "Pause" : "Play all"}</button>
+              <button onClick={reset} className="btn btn-quiet min-h-10 rounded-xl px-2 text-sm"><RotateCcw className="h-4 w-4" aria-hidden /> Reset</button>
             </div>
             <button onClick={() => setPanel(false)} className="mt-2 min-h-9 text-xs text-muted underline">Hide</button>
           </section>
         ) : (
-          <button onClick={() => setPanel(true)} className="ml-auto flex min-h-9 items-center rounded-full border border-stone bg-paper px-3 text-xs text-muted">Demo controls (D)</button>
+          <button onClick={() => setPanel(true)} className="ml-auto flex min-h-9 items-center rounded-full bg-white/90 px-3 text-xs text-muted shadow-[0_6px_16px_rgba(46,34,96,0.15)]">Demo controls (D)</button>
         )}
+        {showNav && tab && <BottomNav tab={tab} onTab={(t) => setRoute(t === "me" ? "me" : t === "group" ? "group" : "home")} />}
       </div>
     </Shell>
   );
