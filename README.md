@@ -41,7 +41,7 @@ No fees, ever: the app pays every network fee.
 |---|---|---|
 | **Solana program** (Anchor) | Pots, shares, pacts, votes, 95/5 split, disputes | Live on devnet |
 | **Kamino Lend** | Real yield on locked pots, exact share pricing | Live on devnet |
-| **QuickNode** | Private RPC behind the Worker; pre-sign simulation; Streams for disputes | RPC live; Stream to set up |
+| **QuickNode** | Private RPC behind the Worker; pre-sign simulation; Streams for disputes | Live (RPC and Stream) |
 | **Privy** | Email sign-in, embedded Solana account that signs | Live |
 | **Cloudflare Workers** | Fee sponsor, RPC proxy, Grok routes, rate limits | Live |
 | **Grok Bot** | Goal coach, "Verify with Grok", group check-in, appeals council | Built; needs its keys |
