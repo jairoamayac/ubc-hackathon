@@ -1,10 +1,10 @@
-# Burn the Boats
+# Kept
 
 > Put money on your goal. Your friends are the witnesses. Quit, and you lose it.
 
-*Working name. The live app still shows the earlier name, "house money".*
+*Name: Kept (team decision, 20 Nov 2026). Earlier working names were "Burn the Boats" and "House Money"; the deployed demo and some docs still use them. Front end changes are logged in [`docs/frontend-log.md`](docs/frontend-log.md).*
 
-We set goals and drop them because quitting costs nothing. Burn the Boats flips it: you put money on the line, your friends join with their own goals, and when the deadline comes you verify each other. Do it, and you get your money back plus a share of what the quitters left. Don't, and you lose it.
+We set goals and drop them because quitting costs nothing. Kept flips it: you put money on the line, your friends join with their own goals, and when the deadline comes you verify each other. Do it, and you get your money back plus a share of what the quitters left. Don't, and you lose it.
 
 It's a commitment to yourself, not a bet. You sign in, add money with Apple Pay and invite friends with a link. No wallet, no seed phrase, no fees. While your money is on the line, it keeps earning.
 
